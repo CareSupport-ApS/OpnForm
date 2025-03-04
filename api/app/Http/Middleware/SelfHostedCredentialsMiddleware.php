@@ -15,6 +15,7 @@ class SelfHostedCredentialsMiddleware
         'credentials.update',
         'user.current',
         'logout',
+        'open.workspaces.index'
     ];
 
     /**
