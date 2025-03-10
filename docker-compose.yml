@@ -15,7 +15,7 @@ services:
       APP_ENV: production
       IS_API_WORKER: "false"
       # Database settings
-      DB_HOST: db
+      DB_HOST: ${DB_HOST:-db}
       REDIS_HOST: redis
       DB_DATABASE: ${DB_DATABASE:-forge}
       DB_USERNAME: ${DB_USERNAME:-forge}
@@ -24,7 +24,7 @@ services:
       # Storage settings
       FILESYSTEM_DISK: local
       LOCAL_FILESYSTEM_VISIBILITY: public
-    env_file: 
+    env_file:
       - ./api/.env
     depends_on:
       db:
@@ -42,7 +42,7 @@ services:
       <<: *api-env
       APP_ENV: production
       IS_API_WORKER: "true"
-    env_file: 
+    env_file:
       - ./api/.env
 
   api-scheduler:
@@ -59,7 +59,7 @@ services:
       CONTAINER_ROLE: scheduler
       PHP_MEMORY_LIMIT: 512M
       PHP_MAX_EXECUTION_TIME: 60
-    env_file: 
+    env_file:
       - ./api/.env
 
   ui:
@@ -68,7 +68,7 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.client
-    env_file: 
+    env_file:
       - ./client/.env
 
   redis:
