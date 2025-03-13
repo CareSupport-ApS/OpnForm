@@ -1,7 +1,7 @@
 import { defineStore } from "pinia"
 import { useContentStore } from "~/composables/stores/useContentStore.js"
 
-export const workspaceEndpoint = "open/workspaces/"
+export const workspaceEndpoint = "open/workspaces"
 
 export const useWorkspacesStore = defineStore("workspaces", () => {
   const storedWorkspaceId = useCookie("currentWorkspace")
@@ -40,11 +40,11 @@ export const useWorkspacesStore = defineStore("workspaces", () => {
   }
 
   const getWorkspaceUsers = async() => {
-    return await opnFetch(`${workspaceEndpoint}${currentId.value}/users/`)
+    return await opnFetch(`${workspaceEndpoint}/${currentId.value}/users`)
   }
 
   const getWorkspaceInvites = async() => {
-    return await opnFetch(`${workspaceEndpoint}${currentId.value}/invites/`)
+    return await opnFetch(`${workspaceEndpoint}/${currentId.value}/invites`)
   }
 
   return {
