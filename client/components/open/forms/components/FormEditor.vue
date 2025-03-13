@@ -154,14 +154,14 @@ export default {
         opnFetch('/open/forms/' + form.value.id + '/mobile-editor-email')
       }
     })
-    
+
 
     const { user } = storeToRefs(useAuthStore())
     const formsStore = useFormsStore()
     const { content: form } = storeToRefs(useWorkingFormStore())
     const { getCurrent: workspace } = storeToRefs(useWorkspacesStore())
     const workingFormStore = useWorkingFormStore()
-    
+
     return {
       appStore: useAppStore(),
       crisp: useCrisp(),
@@ -237,7 +237,7 @@ export default {
       // Apply defaults to the form
       const defaultedData = setFormDefaults(this.form.data())
       this.form.fill(defaultedData)
-  
+
       this.form.properties = validatePropertiesLogic(this.form.properties)
       if (this.isGuest) {
         this.saveFormGuest()
@@ -253,7 +253,7 @@ export default {
       this.updateFormLoading = true
       this.validationErrorResponse = null
       this.form
-        .put("/open/forms/{id}/".replace("{id}", this.form.id))
+        .put("/open/forms/{id}".replace("{id}", this.form.id))
         .then((data) => {
           this.formsStore.save(data.form)
           this.$emit("on-save")
