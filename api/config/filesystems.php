@@ -65,7 +65,7 @@ return [
             'bucket' => env('AWS_BUCKET'),
             'url' => env('AWS_URL'),
             'endpoint' => env('AWS_ENDPOINT'),
-            'root' => '',
+            'root' => 'caresupport-forms',
             'use_path_style_endpoint' => env('AWS_USE_PATH_STYLE_ENDPOINT', true),
             'temporary_url_rewrites' => json_decode(env('AWS_TEMPORARY_URL_REWRITES', '{}'), true),
         ],
