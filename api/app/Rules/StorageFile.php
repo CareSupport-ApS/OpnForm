@@ -32,12 +32,11 @@ class StorageFile implements ValidationRule
         if (filter_var($value, FILTER_VALIDATE_URL) !== false) {
             return true;
         }
-        $fileNameParser = StorageFileNameParser::parse($value);
 
         // This is use when updating a record, and file uploads aren't changed.
         if ($this->form) {
             $newPath = Str::of(PublicFormController::FILE_UPLOAD_PATH)->replace('?', $this->form->id);
-            if (Storage::exists($newPath . '/' . $fileNameParser->getMovedFileName())) {
+            if (Storage::exists($newPath.'/'.$value)) {
                 return true;
             }
         }
@@ -47,8 +46,8 @@ class StorageFile implements ValidationRule
             return false;
         }
 
-        $filePath = PublicFormController::TMP_FILE_UPLOAD_PATH . $uuid;
-        if (! Storage::exists($filePath)) {
+        $filePath = PublicFormController::TMP_FILE_UPLOAD_PATH.$uuid;
+        if (! Storage::disk('s3')->exists($filePath)) {
             return false;
         }
 
@@ -59,7 +58,7 @@ class StorageFile implements ValidationRule
         }
 
         if (count($this->fileTypes) > 0) {
-            $this->error = 'Incorrect file type. Allowed only: ' . implode(',', $this->fileTypes);
+            $this->error = 'Incorrect file type. Allowed only: '.implode(',', $this->fileTypes);
             return collect($this->fileTypes)->map(function ($type) {
                 return strtolower($type);
             })->contains(strtolower($fileNameParser->extension));
