@@ -7,6 +7,7 @@ use App\Models\Forms\Form;
 use App\Service\Storage\StorageFileNameParser;
 use Closure;
 use Illuminate\Contracts\Validation\ValidationRule;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
@@ -43,11 +44,19 @@ class StorageFile implements ValidationRule
 
         $fileNameParser = StorageFileNameParser::parse($value);
         if (! $uuid = $fileNameParser->uuid) {
+            Log::error('Invalid file name', [
+                'file' => $value,
+                'uuid' => $uuid,
+            ]);
             return false;
         }
 
         $filePath = PublicFormController::TMP_FILE_UPLOAD_PATH.$uuid;
         if (! Storage::exists($filePath)) {
+            Log::error('File not found', [
+                'file' => $filePath,
+                'uuid' => $uuid,
+            ]);
             return false;
         }
 
