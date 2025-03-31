@@ -52,7 +52,7 @@ class StorageFile implements ValidationRule
         }
 
         $filePath = PublicFormController::TMP_FILE_UPLOAD_PATH.$uuid;
-        if (! Storage::exists($filePath)) {
+        if (! Storage::disk('s3')->exists($filePath)) {
             Log::error('File not found', [
                 'file' => $filePath,
                 'uuid' => $uuid,
