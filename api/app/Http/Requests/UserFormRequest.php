@@ -4,8 +4,15 @@ namespace App\Http\Requests;
 
 use App\Http\Requests\Workspace\CustomDomainRequest;
 use App\Models\Forms\Form;
+use App\Rules\CustomSlugRule;
 use App\Rules\FormPropertyLogicRule;
+use App\Rules\PaymentBlockConfigurationRule;
+use Illuminate\Support\Facades\App;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
+use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Validation\Rule;
+use Illuminate\Http\Request;
 
 /**
  * Abstract class to validate create/update forms
@@ -14,6 +21,18 @@ use Illuminate\Validation\Rule;
  */
 abstract class UserFormRequest extends \Illuminate\Foundation\Http\FormRequest
 {
+    public ?Form $form;
+
+    public function __construct(Request $request)
+    {
+        $this->form = $request?->form ?? null;
+
+        // // For update requests, try to get the form from the route parameter
+        if (!$this->form && $request->route('id')) {
+            $this->form = Form::find($request->route('id'));
+        }
+    }
+
     protected function prepareForValidation()
     {
         $data = $this->all();
@@ -31,12 +50,61 @@ abstract class UserFormRequest extends \Illuminate\Foundation\Http\FormRequest
     }
 
     /**
+     * Handle a failed validation attempt.
+     *
+     * @param  \Illuminate\Contracts\Validation\Validator  $validator
+     * @return void
+     *
+     * @throws \Illuminate\Validation\ValidationException
+     */
+    protected function failedValidation(Validator $validator)
+    {
+        // Log validation errors to default log and Slack
+        $errors = $validator->errors()->toArray();
+        $requestData = $this->except(['password']); // Exclude sensitive data
+
+        $logData = [
+            'errors' => $errors,
+            'request_data' => $requestData,
+            'ip' => request()->ip(),
+            'user_agent' => request()->userAgent(),
+            'route' => request()->route()->getName() ?? request()->path()
+        ];
+
+        // Log to both default channel and Slack
+        if (!in_array(App::environment(), ['testing'])) {
+            Log::channel('combined')->warning(
+                'Frontend validation bypass detected in form submission',
+                $logData
+            );
+        }
+
+        throw new ValidationException($validator);
+    }
+
+    /**
      * Get the validation rules that apply to the request.
      *
      * @return array
      */
     public function rules()
     {
+        // Get the workspace from the form being updated or the current user's workspace
+        $workspace = null;
+
+        // For update requests, try to get the workspace from the form
+        if ($this->form) {
+            $workspace = $this->form->workspace;
+        }
+        // For create requests, get the workspace from the workspace parameter
+        elseif ($this->route('workspace')) {
+            $workspace = $this->route('workspace');
+        }
+        // Otherwise, try to get from the request attribute
+        elseif ($this->get('workspace_id')) {
+            $workspace = \App\Models\Workspace::find($this->get('workspace_id'));
+        }
+
         return [
             // Form Info
             'title' => 'required|string|max:60',
@@ -56,7 +124,6 @@ abstract class UserFormRequest extends \Illuminate\Foundation\Http\FormRequest
             'logo_picture' => 'url|nullable',
             'dark_mode' => ['required', Rule::in(Form::DARK_MODE_VALUES)],
             'color' => 'required|string',
-            'hide_title' => 'required|boolean',
             'uppercase_labels' => 'required|boolean',
             'no_branding' => 'required|boolean',
             'transparent_background' => 'required|boolean',
@@ -81,12 +148,13 @@ abstract class UserFormRequest extends \Illuminate\Foundation\Http\FormRequest
             'show_progress_bar' => 'boolean',
             'auto_save' => 'boolean',
             'auto_focus' => 'boolean',
+            'enable_partial_submissions' => 'boolean',
 
             // Properties
             'properties' => 'required|array',
             'properties.*.id' => 'required',
             'properties.*.name' => 'required',
-            'properties.*.type' => 'required',
+            'properties.*.type' => ['required', new PaymentBlockConfigurationRule($this->properties, $workspace)],
             'properties.*.placeholder' => 'sometimes|nullable',
             'properties.*.prefill' => 'sometimes|nullable',
             'properties.*.help' => 'sometimes|nullable',
@@ -135,6 +203,7 @@ abstract class UserFormRequest extends \Illuminate\Foundation\Http\FormRequest
             'password' => 'sometimes|nullable',
             'use_captcha' => 'boolean',
             'captcha_provider' => ['sometimes', Rule::in(['recaptcha', 'hcaptcha'])],
+            'slug' => [new CustomSlugRule($this->form)],
 
             // Custom SEO
             'seo_meta' => 'nullable|array',

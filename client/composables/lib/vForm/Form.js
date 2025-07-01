@@ -85,6 +85,17 @@ class Form {
     clearTimeout(this.recentlySuccessfulTimeoutId)
   }
 
+  resetAndFill(data = {}) {
+    // Clear form state
+    this.clear()
+    
+    // Reset and update form data using the existing update method
+    this.originalData = {}
+    this.update(data)
+    
+    return this
+  }
+
   reset() {
     Object.keys(this)
       .filter((key) => !Form.ignore.includes(key))
@@ -127,7 +138,7 @@ class Form {
     if (method.toLowerCase() === "get") {
       config.params = { ...this.data(), ...config.params }
     } else {
-      config.body = { ...this.data(), ...config.data }
+      config.body = { ...this.data(), ...config.data, ...config.body }
 
       if (hasFiles(config.data) && !config.transformRequest) {
         config.transformRequest = [(data) => serialize(data)]

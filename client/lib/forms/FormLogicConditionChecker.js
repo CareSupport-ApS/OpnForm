@@ -63,11 +63,31 @@ function propertyConditionMet(propertyCondition, value) {
       return filesConditionMet(propertyCondition, value)
     case "matrix":
       return matrixConditionMet(propertyCondition, value)
+    case "payment":
+      return paymentConditionMet(propertyCondition, value)
   }
   return false
 }
 
+// Helper function to safely parse numeric values
+function safeParseFloat(value) {
+  if (value === undefined || value === null) return null
+  const parsed = parseFloat(value)
+  return isNaN(parsed) ? null : parsed
+}
+
+// Helper function to check if values are valid for numeric comparison
+function areValidNumbers(condition, fieldValue) {
+  const conditionValue = safeParseFloat(condition.value)
+  const parsedFieldValue = safeParseFloat(fieldValue)
+  return conditionValue !== null && parsedFieldValue !== null
+}
+
 function checkEquals(condition, fieldValue) {
+  // For numeric values, convert to numbers before comparison
+  if (areValidNumbers(condition, fieldValue)) {
+    return parseFloat(condition.value) === parseFloat(fieldValue)
+  }
   return condition.value === fieldValue
 }
 
@@ -116,35 +136,23 @@ function checkIsEmpty(condition, fieldValue) {
 }
 
 function checkGreaterThan(condition, fieldValue) {
-  return (
-    condition.value &&
-    fieldValue &&
-    parseFloat(fieldValue) > parseFloat(condition.value)
-  )
+  if (!areValidNumbers(condition, fieldValue)) return false
+  return parseFloat(fieldValue) > parseFloat(condition.value)
 }
 
 function checkGreaterThanEqual(condition, fieldValue) {
-  return (
-    condition.value &&
-    fieldValue &&
-    parseFloat(fieldValue) >= parseFloat(condition.value)
-  )
+  if (!areValidNumbers(condition, fieldValue)) return false
+  return parseFloat(fieldValue) >= parseFloat(condition.value)
 }
 
 function checkLessThan(condition, fieldValue) {
-  return (
-    condition.value &&
-    fieldValue &&
-    parseFloat(fieldValue) < parseFloat(condition.value)
-  )
+  if (!areValidNumbers(condition, fieldValue)) return false
+  return parseFloat(fieldValue) < parseFloat(condition.value)
 }
 
 function checkLessThanEqual(condition, fieldValue) {
-  return (
-    condition.value &&
-    fieldValue &&
-    parseFloat(fieldValue) <= parseFloat(condition.value)
-  )
+  if (!areValidNumbers(condition, fieldValue)) return false
+  return parseFloat(fieldValue) <= parseFloat(condition.value)
 }
 
 function checkBefore(condition, fieldValue) {
@@ -282,14 +290,14 @@ function textConditionMet(propertyCondition, value) {
       try {
         const regex = new RegExp(propertyCondition.value)
         return regex.test(value)
-      } catch (e) {
+      } catch {
         return false
       }
     case 'does_not_match_regex':
       try {
         const regex = new RegExp(propertyCondition.value)
         return !regex.test(value)
-      } catch (e) {
+      } catch {
         return true
       }
   }
@@ -313,7 +321,7 @@ function numberConditionMet(propertyCondition, value) {
     case "is_empty":
       return checkIsEmpty(propertyCondition, value)
     case "is_not_empty":
-      return checkIsEmpty(propertyCondition, value)
+      return !checkIsEmpty(propertyCondition, value)
     case "content_length_equals":
       return checkLength(propertyCondition, value, "===")
     case "content_length_does_not_equal":
@@ -425,4 +433,18 @@ function matrixConditionMet(propertyCondition, value) {
      return !checkMatrixContains(propertyCondition, value)
   }
   return false
+}
+
+function paymentConditionMet(propertyCondition, value) {
+  switch (propertyCondition.operator) {
+    case "paid":
+      return checkPaid(propertyCondition, value)
+    case "not_paid":
+      return !checkPaid(propertyCondition, value)
+  }
+  return false
+}
+
+function checkPaid(propertyCondition, value) {
+  return (value) ? value.startsWith('pi_') : false
 }

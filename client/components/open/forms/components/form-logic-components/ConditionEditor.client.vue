@@ -45,7 +45,7 @@
 </template>
 
 <script>
-/* eslint-disable vue/one-component-per-file */
+ 
 import { defineComponent } from "vue"
 import QueryBuilder from "query-builder-vue-3"
 import ColumnCondition from "./ColumnCondition.vue"
@@ -61,6 +61,7 @@ export default {
   props: {
     form: { type: Object, required: true },
     modelValue: { type: Object, required: false },
+    customValidation: { type: Boolean, default: false },
   },
   emits:  ['update:modelValue'],
 
@@ -79,12 +80,19 @@ export default {
         .map((property) => {
           const workspaceId = this.form.workspace_id
           const formSlug = this.form.slug
+          const customValidation = this.customValidation
           return {
             identifier: property.id,
             name: property.name,
             component: (function () {
               return defineComponent({
                 extends: ColumnCondition,
+                props: {
+                  customValidation: {
+                    type: Boolean,
+                    default: customValidation
+                  }
+                },
                 computed: {
                   property() {
                     return property

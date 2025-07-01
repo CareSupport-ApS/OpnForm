@@ -17,8 +17,26 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
-use Vinkla\Hashids\Facades\Hashids;
 
+/**
+ * Job to store form submissions
+ *
+ * This job handles the storage of form submissions, including processing of metadata
+ * and special field types like files and signatures.
+ *
+ * The job accepts all data in the submissionData array, including metadata fields:
+ * - submission_id: ID of an existing submission to update (must be an integer)
+ * - completion_time: Time in seconds it took to complete the form
+ * - is_partial: Whether this is a partial submission (will be stored with STATUS_PARTIAL)
+ *   If not specified, submissions are treated as complete by default.
+ *
+ * These metadata fields will be automatically extracted and removed from the stored form data.
+ *
+ * For partial submissions:
+ * - The submission will be stored with STATUS_PARTIAL
+ * - All file uploads and signatures will be processed normally
+ * - The submission can later be updated to STATUS_COMPLETED when the user completes the form
+ */
 class StoreFormSubmissionJob implements ShouldQueue
 {
     use Dispatchable;
@@ -26,15 +44,19 @@ class StoreFormSubmissionJob implements ShouldQueue
     use Queueable;
     use SerializesModels;
 
-    public ?string $submissionId = null;
+    public ?int $submissionId = null;
     private ?array $formData = null;
+    private ?int $completionTime = null;
+    private bool $isPartial = false;
 
     /**
      * Create a new job instance.
      *
+     * @param Form $form The form being submitted
+     * @param array $submissionData Form data including metadata fields (submission_id, completion_time, etc.)
      * @return void
      */
-    public function __construct(public Form $form, public array $submissionData, public ?int $completionTime = null)
+    public function __construct(public Form $form, public array $submissionData)
     {
     }
 
@@ -45,60 +67,114 @@ class StoreFormSubmissionJob implements ShouldQueue
      */
     public function handle()
     {
+        $this->extractMetadata();
         $this->formData = $this->getFormData();
         $this->addHiddenPrefills($this->formData);
-
         $this->storeSubmission($this->formData);
-
         $this->formData['submission_id'] = $this->submissionId;
-        FormSubmitted::dispatch($this->form, $this->formData);
+        if (!$this->isPartial) {
+            FormSubmitted::dispatch($this->form, $this->formData);
+        }
     }
 
+    /**
+     * Extract metadata from submission data
+     *
+     * This method extracts and removes metadata fields from the submission data:
+     * - submission_id
+     * - completion_time
+     * - is_partial
+     */
+    private function extractMetadata(): void
+    {
+        if (isset($this->submissionData['completion_time'])) {
+            $this->completionTime = $this->submissionData['completion_time'];
+            unset($this->submissionData['completion_time']);
+        }
+        if (isset($this->submissionData['submission_id']) && $this->submissionData['submission_id']) {
+            if (is_numeric($this->submissionData['submission_id'])) {
+                $this->submissionId = (int)$this->submissionData['submission_id'];
+            }
+            unset($this->submissionData['submission_id']);
+        }
+        if (isset($this->submissionData['is_partial'])) {
+            $this->isPartial = (bool)$this->submissionData['is_partial'];
+            unset($this->submissionData['is_partial']);
+        }
+    }
+
+    /**
+     * Get the submission ID
+     *
+     * @return int|null
+     */
     public function getSubmissionId()
     {
         return $this->submissionId;
     }
 
-    public function setSubmissionId(int $id)
+    /**
+     * Resolve the record to update
+     *
+     * @param array $submissionData
+     * @return int|null
+     */
+    private function resolveRecordToUpdate(array $submissionData)
     {
-        $this->submissionId = $id;
-
-        return $this;
-    }
-
-    private function storeSubmission(array $formData)
-    {
-        // Create or update record
-        if ($previousSubmission = $this->submissionToUpdate()) {
-            $previousSubmission->data = $formData;
-            $previousSubmission->completion_time = $this->completionTime;
-            $previousSubmission->save();
-            $this->submissionId = $previousSubmission->id;
-        } else {
-            $response = $this->form->submissions()->create([
-                'data' => $formData,
-                'completion_time' => $this->completionTime,
-            ]);
-            $this->submissionId = $response->id;
+        if (!$this->form->is_pro || !isset($this->form->database_fields_update) || $this->submissionId) {
+            return null;
         }
+
+        $propertyIds = $this->form->database_fields_update;
+        $properties = collect($this->form->properties)->filter(function ($property) use ($propertyIds) {
+            return in_array($property['id'], $propertyIds);
+        });
+
+        // Build query to find record based on database_fields_update fields
+        $query = $this->form->submissions();
+        foreach ($properties as $property) {
+            $fieldId = $property['id'];
+            if (isset($submissionData[$fieldId]) && $submissionData[$fieldId]) {
+                $newValue = $submissionData[$fieldId];
+
+                // Remove country code from phone number
+                if ($property['type'] == 'phone_number' && (!$property['use_simple_text_input'] ?? false)) {
+                    $newValue = substr($newValue, 2);
+                }
+
+                $query->where("data->$fieldId", $newValue);
+            }
+        }
+        $record = $query->first();
+
+        return $record ? $record->id : null;
     }
 
     /**
-     * Search for Submission record to update and returns it
+     * Store the submission in the database
+     *
+     * @param array $formData
      */
-    private function submissionToUpdate(): ?FormSubmission
+    private function storeSubmission(array $formData)
     {
-        if ($this->submissionId) {
-            return $this->form->submissions()->findOrFail($this->submissionId);
-        }
-        if ($this->form->editable_submissions && isset($this->submissionData['submission_id']) && $this->submissionData['submission_id']) {
-            $submissionId = $this->submissionData['submission_id'] ? Hashids::decode($this->submissionData['submission_id']) : false;
-            $submissionId = $submissionId[0] ?? null;
-
-            return $this->form->submissions()->findOrFail($submissionId);
+        // Handle record update
+        if ($recordToUpdate = $this->resolveRecordToUpdate($this->submissionData)) {
+            $this->submissionId = $recordToUpdate;
         }
 
-        return null;
+        $submission = $this->submissionId
+            ? $this->form->submissions()->findOrFail($this->submissionId)
+            : new FormSubmission();
+        if (!$this->submissionId) {
+            $submission->form_id = $this->form->id;
+        }
+        $submission->data = $formData;
+        $submission->completion_time = $this->completionTime;
+        $submission->status = $this->isPartial
+            ? FormSubmission::STATUS_PARTIAL
+            : FormSubmission::STATUS_COMPLETED;
+        $submission->save();
+        $this->submissionId = $submission->id;
     }
 
     /**
@@ -112,10 +188,8 @@ class StoreFormSubmissionJob implements ShouldQueue
     {
         $data = $this->submissionData;
         $finalData = [];
-
         $properties = collect($this->form->properties);
 
-        // Do required transformation per type (e.g. file uploads)
         foreach ($data as $answerKey => $answerValue) {
             $field = $properties->where('id', $answerKey)->first();
             if (!$field) {
@@ -127,45 +201,66 @@ class StoreFormSubmissionJob implements ShouldQueue
                 || $field['type'] == 'files'
             ) {
                 if (is_array($answerValue)) {
-                    $finalData[$field['id']] = [];
-                    foreach ($answerValue as $file) {
-                        $finalData[$field['id']][] = $this->storeFile($file);
+                    $processedFiles = [];
+                    foreach ($answerValue as $fileItem) {
+                        if (is_string($fileItem) && !empty($fileItem)) {
+                            $singleStoredFile = $this->storeFile($fileItem);
+                            if ($singleStoredFile) {
+                                $processedFiles[] = $singleStoredFile;
+                            }
+                        }
                     }
+                    $finalData[$field['id']] = $processedFiles;
                 } else {
-                    $finalData[$field['id']] = $this->storeFile($answerValue);
+                    if (is_string($answerValue) && !empty($answerValue)) {
+                        $singleFileResult = $this->storeFile($answerValue);
+                        $finalData[$field['id']] = $singleFileResult;
+                    } else {
+                        $finalData[$field['id']] = $this->storeFile($answerValue); // Handles null/empty $answerValue by returning null
+                    }
                 }
             } else {
-                if ($field['type'] == 'text' && isset($field['generates_uuid']) && $field['generates_uuid']) {
-                    $finalData[$field['id']] = ($this->form->is_pro) ? Str::uuid() : 'Please upgrade your OpenForm subscription to use our ID generation features';
-                } else {
-                    if ($field['type'] == 'text' && isset($field['generates_auto_increment_id']) && $field['generates_auto_increment_id']) {
-                        $finalData[$field['id']] = ($this->form->is_pro) ? (string) ($this->form->submissions_count + 1) : 'Please upgrade your OpenForm subscription to use our ID generation features';
+                // Standard field processing (text, ID generation, etc.)
+                if (isset($field['generates_uuid']) && $field['generates_uuid'] && $field['type'] == 'text') {
+                    if (empty($answerValue) || !Str::isUuid($answerValue)) {
+                        $finalData[$field['id']] = ($this->form->is_pro) ? Str::uuid()->toString() : 'Please upgrade your OpenForm subscription to use our ID generation features';
                     } else {
                         $finalData[$field['id']] = $answerValue;
                     }
+                } elseif (isset($field['generates_auto_increment_id']) && $field['generates_auto_increment_id'] && $field['type'] == 'text') {
+                    if (empty($answerValue) || !is_numeric($answerValue)) {
+                        $finalData[$field['id']] = ($this->form->is_pro) ? (string)($this->form->submissions_count + 1) : 'Please upgrade your OpenForm subscription to use our ID generation features';
+                    } else {
+                        $finalData[$field['id']] = $answerValue;
+                    }
+                } else {
+                    $finalData[$field['id']] = $answerValue;
                 }
             }
-
-            // For Singrature
+            // Special field types
             if ($field['type'] == 'signature') {
                 $finalData[$field['id']] = $this->storeSignature($answerValue);
             }
-
-            // For Phone
             if ($field['type'] == 'phone_number' && $answerValue && ctype_alpha(substr($answerValue, 0, 2)) && (!isset($field['use_simple_text_input']) || !$field['use_simple_text_input'])) {
                 $finalData[$field['id']] = substr($answerValue, 2);
             }
         }
-
         return $finalData;
     }
 
     // This is use when updating a record, and file uploads aren't changed.
     private function isSkipForUpload($value)
     {
-        $newPath = Str::of(PublicFormController::FILE_UPLOAD_PATH)->replace('?', $this->form->id);
+        $parser = StorageFileNameParser::parse($value);
+        $canonicalStoredName = $parser->getMovedFileName();
 
-        return Storage::exists($newPath . '/' . $value);
+        if (!$canonicalStoredName) {
+            return false; // Input $value couldn't be resolved to a canonical stored name format
+        }
+
+        $destinationPath = Str::of(PublicFormController::FILE_UPLOAD_PATH)->replace('?', $this->form->id);
+        $fullPathToCheck = $destinationPath . '/' . $canonicalStoredName;
+        return Storage::exists($fullPathToCheck);
     }
 
     /**
@@ -176,63 +271,63 @@ class StoreFormSubmissionJob implements ShouldQueue
      * - file_name-{uuid}.{ext}
      * - {uuid}
      */
-    private function storeFile(?string $value)
+    private function storeFile($value, ?bool $isPublic = null)
     {
-        if ($value == null) {
+        if (is_null($value) || empty($value)) {
             return null;
         }
-
-        if (filter_var($value, FILTER_VALIDATE_URL) !== false && str_contains($value, parse_url(config('app.url'))['host'])) {  // In case of prefill we have full url so convert to s3
+        // Handle pre-existing full URLs (e.g., from prefill)
+        if (filter_var($value, FILTER_VALIDATE_URL) !== false && str_contains($value, parse_url(config('app.url'))['host'])) {
             $fileName = explode('?', basename($value))[0];
-            $path = FormController::ASSETS_UPLOAD_PATH . '/' . $fileName;
+            $path = FormController::ASSETS_UPLOAD_PATH . '/' . $fileName; // Assuming assets are in a defined path
             $newPath = Str::of(PublicFormController::FILE_UPLOAD_PATH)->replace('?', $this->form->id);
             Storage::move($path, $newPath . '/' . $fileName);
-
             return $fileName;
         }
 
-        if ($this->isSkipForUpload($value)) {
-            return $value;
+        $shouldSkip = $this->isSkipForUpload($value);
+
+        if ($shouldSkip) {
+            // File (based on canonical name derived from $value) already exists in permanent storage.
+            // Return its canonical name.
+            $parser = StorageFileNameParser::parse($value);
+            return $parser->getMovedFileName() ?? $value; // Fallback to $value if canonical somehow fails (defensive)
         }
 
-        $fileNameParser = StorageFileNameParser::parse($value);
+        // Process as a new file upload (or one whose temp version needs to be moved)
+        $fileNameParser = StorageFileNameParser::parse($value); // $value is the temp file reference (e.g., originalname_uuid.ext or uuid)
 
-        // Make sure we retrieve the file in tmp storage, move it to persistent
-        $fileName = PublicFormController::TMP_FILE_UPLOAD_PATH . '/' . $fileNameParser->uuid;
-        if (!Storage::exists($fileName)) {
-            // File not found, we skip
-            return null;
+        if (!$fileNameParser || !$fileNameParser->uuid) {
+            return null; // Cannot derive UUID from the reference
+        }
+        $fileNameInTmp = PublicFormController::TMP_FILE_UPLOAD_PATH . $fileNameParser->uuid;
+        if (!Storage::exists($fileNameInTmp)) {
+            return null; // Temporary file not found
+        }
+        $movedFileName = $fileNameParser->getMovedFileName(); // This is the canonical name for storage
+        if (empty($movedFileName)) {
+            return null; // Canonical name generation failed
         }
         $newPath = Str::of(PublicFormController::FILE_UPLOAD_PATH)->replace('?', $this->form->id);
-        $completeNewFilename = $newPath . '/' . $fileNameParser->getMovedFileName();
-
-        \Log::debug('Moving file to permanent storage.', [
-            'uuid' => $fileNameParser->uuid,
-            'destination' => $completeNewFilename,
-            'form_id' => $this->form->id,
-            'form_slug' => $this->form->slug,
-        ]);
-        Storage::move($fileName, $completeNewFilename);
-
-        return $fileNameParser->getMovedFileName();
+        $completeNewFilename = $newPath . '/' . $movedFileName;
+        Storage::move($fileNameInTmp, $completeNewFilename);
+        return $movedFileName;
     }
 
     private function storeSignature(?string $value)
     {
-        if ($value && preg_match('/^[\/\w\-. ]+$/', $value)) {  // If it's filename
-            return $this->storeFile($value);
+        // If $value looks like a filename (already processed, e.g. during skip or previous handling)
+        if ($value && preg_match('/^[\/\w\-. ]+$/', $value)) {
+            return $this->storeFile($value); // Re-run through storeFile for consistency / skip logic
         }
-
+        // If $value is base64 data
         if ($value == null || !isset(explode(',', $value)[1])) {
             return null;
         }
-
         $fileName = 'sign_' . (string) Str::uuid() . '.png';
         $newPath = Str::of(PublicFormController::FILE_UPLOAD_PATH)->replace('?', $this->form->id);
         $completeNewFilename = $newPath . '/' . $fileName;
-
         Storage::put($completeNewFilename, base64_decode(explode(',', $value)[1]));
-
         return $fileName;
     }
 
@@ -243,15 +338,35 @@ class StoreFormSubmissionJob implements ShouldQueue
      */
     private function addHiddenPrefills(array &$formData): void
     {
-        // Find hidden properties with prefill, set values
         collect($this->form->properties)->filter(function ($property) {
-            return isset($property['hidden'])
-                && isset($property['prefill'])
-                && FormLogicPropertyResolver::isHidden($property, $this->submissionData)
-                && !is_null($property['prefill'])
-                && !in_array($property['type'], ['files'])
-                && !($property['type'] == 'url' && isset($property['file_upload']) && $property['file_upload']);
+            return FormLogicPropertyResolver::isHidden($property, $this->submissionData);
         })->each(function (array $property) use (&$formData) {
+            // If a value is already set, we don't do anything for this property
+            if (array_key_exists($property['id'], $formData) && $formData[$property['id']] !== '' && $formData[$property['id']] !== [] && !is_null($formData[$property['id']])) {
+                return;
+            }
+
+            // Handle ID Generation for text fields
+            if ($property['type'] == 'text') {
+                if (isset($property['generates_uuid']) && $property['generates_uuid']) {
+                    $formData[$property['id']] = ($this->form->is_pro) ? Str::uuid()->toString() : 'Please upgrade your OpenForm subscription to use our ID generation features';
+                    return; // ID generated, so we skip prefill logic for this field.
+                }
+
+                if (isset($property['generates_auto_increment_id']) && $property['generates_auto_increment_id']) {
+                    $formData[$property['id']] = ($this->form->is_pro) ? (string)($this->form->submissions_count + 1) : 'Please upgrade your OpenForm subscription to use our ID generation features';
+                    return; // ID generated, so we skip prefill logic for this field.
+                }
+            }
+
+            // From here, it's prefill logic.
+            if (!isset($property['prefill']) || is_null($property['prefill'])) {
+                return;
+            }
+            if (in_array($property['type'], ['files']) || ($property['type'] == 'url' && isset($property['file_upload']) && $property['file_upload'])) {
+                return;
+            }
+
             if ($property['type'] === 'date' && isset($property['prefill_today']) && $property['prefill_today']) {
                 $formData[$property['id']] = now()->format((isset($property['with_time']) && $property['with_time']) ? 'Y-m-d H:i' : 'Y-m-d');
             } else {
@@ -261,13 +376,17 @@ class StoreFormSubmissionJob implements ShouldQueue
     }
 
     /**
-     * Get the processed form data after all transformations
+     * Get the processed form data including the submission ID
+     *
+     * @return array
      */
     public function getProcessedData(): array
     {
         if ($this->formData === null) {
             $this->formData = $this->getFormData();
         }
-        return $this->formData;
+        $data = $this->formData;
+        $data['submission_id'] = $this->submissionId;
+        return $data;
     }
 }

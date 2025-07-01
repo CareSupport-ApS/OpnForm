@@ -1,7 +1,5 @@
 <?php
 
-use Tests\Helpers\FormSubmissionDataFactory;
-
 it('can update form submission', function () {
     $user = $this->actingAsUser();
     $workspace = $this->createUserWorkspace($user);
@@ -9,7 +7,7 @@ it('can update form submission', function () {
     $form = $this->createForm($user, $workspace, [
         'closes_at' => \Carbon\Carbon::now()->addDays(1)->toDateTimeString(),
     ]);
-    $formData = FormSubmissionDataFactory::generateSubmissionData($form, ['text' => 'John']);
+    $formData = $this->generateFormSubmissionData($form, ['text' => 'John']);
     $textFieldId = array_keys($formData)[0];
     $updatedFormData = $formData;
     $updatedFormTextValue = 'Updated text';
@@ -41,7 +39,7 @@ it('cannot update form submission as non admin', function () {
     $form = $this->createForm($user, $workspace, [
         'closes_at' => \Carbon\Carbon::now()->addDays(1)->toDateTimeString(),
     ]);
-    $formData = FormSubmissionDataFactory::generateSubmissionData($form, ['text' => 'John']);
+    $formData = $this->generateFormSubmissionData($form, ['text' => 'John']);
     $textFieldId = array_keys($formData)[0];
     $updatedFormData = $formData;
     $updatedFormTextValue = 'Updated text';

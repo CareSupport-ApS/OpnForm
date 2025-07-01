@@ -141,7 +141,8 @@
                     v-else-if="authenticated && user.is_subscribed"
                     class="mr-1"
                     :arrow="true"
-                    @click.prevent="openBilling"
+                    :to="{ name: 'redirect-billing-portal' }"
+                    target="_blank"
                   >
                     View Billing
                   </v-button>
@@ -216,21 +217,13 @@ export default {
       "Remove OpnForm branding",
       "Priority support",
       "Form Analytics",
-      "Custom sender email (SMTP)"
+      "Custom sender email (SMTP)",
+      "API access",
     ],
   }),
 
   computed: {},
 
-  methods: {
-    openBilling() {
-      this.billingLoading = true
-      opnFetch("/subscription/billing-portal").then((data) => {
-        this.billingLoading = false
-        const url = data.portal_url
-        window.location = url
-      })
-    },
-  },
+  methods: {},
 }
 </script>

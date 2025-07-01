@@ -1,7 +1,6 @@
 <?php
 
 use App\Notifications\Forms\FormEmailNotification;
-use Tests\Helpers\FormSubmissionDataFactory;
 use Illuminate\Notifications\AnonymousNotifiable;
 use Illuminate\Support\Facades\Notification;
 
@@ -19,7 +18,7 @@ it('send email with the submitted data', function () {
         'reply_to' => 'reply@example.com',
     ]);
 
-    $formData = FormSubmissionDataFactory::generateSubmissionData($form);
+    $formData = $this->generateFormSubmissionData($form);
 
     $event = new \App\Events\Forms\FormSubmitted($form, $formData);
     $mailable = new FormEmailNotification($event, $integrationData, 'mail');
@@ -119,7 +118,7 @@ it('uses custom sender email in self-hosted mode', function () {
         'reply_to' => 'reply@example.com',
     ]);
 
-    $formData = FormSubmissionDataFactory::generateSubmissionData($form);
+    $formData = $this->generateFormSubmissionData($form);
 
     $event = new \App\Events\Forms\FormSubmitted($form, $formData);
     $mailable = new FormEmailNotification($event, $integrationData, 'mail');
@@ -152,7 +151,7 @@ it('does not use custom sender email in non-self-hosted mode', function () {
         'reply_to' => 'reply@example.com',
     ]);
 
-    $formData = FormSubmissionDataFactory::generateSubmissionData($form);
+    $formData = $this->generateFormSubmissionData($form);
 
     $event = new \App\Events\Forms\FormSubmitted($form, $formData);
     $mailable = new FormEmailNotification($event, $integrationData, 'mail');
@@ -164,6 +163,37 @@ it('does not use custom sender email in non-self-hosted mode', function () {
     expect($renderedMail->from[1])->toBe('Custom Sender');
     expect($renderedMail->subject)->toBe('Custom Subject');
     expect(trim($renderedMail->render()))->toContain('Custom content');
+});
+
+it('send email with mention as sender name', function () {
+    $user = $this->actingAsUser();
+    $workspace = $this->createUserWorkspace($user);
+    $form = $this->createForm($user, $workspace);
+
+    $emailProperty = collect($form->properties)->first(function ($property) {
+        return $property['type'] == 'email';
+    });
+
+    $integrationData = $this->createFormIntegration('email', $form->id, [
+        'send_to' => 'test@test.com',
+        'sender_name' => '<span mention-field-id="' . $emailProperty['id'] . '" mention-field-name="' . $emailProperty['name'] . '" mention-fallback="" contenteditable="false" mention="true">' . $emailProperty['name'] . '</span>',
+        'subject' => 'New form submission',
+        'email_content' => 'Hello there 👋 <br>Test body',
+        'include_submission_data' => true,
+        'include_hidden_fields_submission_data' => false,
+        'reply_to' => null
+    ]);
+
+    $formData = [
+        $emailProperty['id'] => 'reply@example.com',
+    ];
+
+    $event = new \App\Events\Forms\FormSubmitted($form, $formData);
+    $mailable = new FormEmailNotification($event, $integrationData, 'mail');
+    $notifiable = new AnonymousNotifiable();
+    $notifiable->route('mail', 'test@test.com');
+    $renderedMail = $mailable->toMail($notifiable);
+    expect($renderedMail->from[1])->toBe('reply@example.com');
 });
 
 it('send email with mention as reply to', function () {
@@ -243,7 +273,7 @@ it('uses exact email address without timestamp in self-hosted mode', function ()
         'include_submission_data' => true,
     ]);
 
-    $formData = FormSubmissionDataFactory::generateSubmissionData($form);
+    $formData = $this->generateFormSubmissionData($form);
 
     $event = new \App\Events\Forms\FormSubmitted($form, $formData);
     $mailable = new FormEmailNotification($event, $integrationData, 'mail');

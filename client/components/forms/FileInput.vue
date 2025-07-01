@@ -10,12 +10,14 @@
         theme.fileInput.minHeight
       ]"
     >
-      <camera-upload
+      <ClientOnly>
+      <CameraUpload
         v-if="cameraUpload"
         :theme="theme"
         @upload-image="cameraFileUpload"
         @stop-webcam="isInWebcam=false"
       />
+      </ClientOnly>
     </div>
     <div
       v-else
@@ -98,7 +100,7 @@
               <p class="mt-2 text-sm text-gray-500 font-medium select-none">
                 {{ $t('forms.fileInput.chooseFiles', { n: multiple ? 1 : 0 }) }}
               </p>
-              <p class="mt-1 text-xs text-gray-400 dark:text-gray-600 select-none">
+              <p class="mt-1 text-xs text-gray-400 dark:text-gray-400 select-none">
                 {{ $t('forms.fileInput.sizeLimit', mbLimit) }}
               </p>
             </template>

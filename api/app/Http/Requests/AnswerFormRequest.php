@@ -54,6 +54,11 @@ class AnswerFormRequest extends FormRequest
      */
     public function rules()
     {
+        // Skip validation if this is a partial submission
+        if ($this->has('is_partial')) {
+            return [];
+        }
+
         $selectionFields = collect($this->form->properties)->filter(function ($pro) {
             return in_array($pro['type'], ['select', 'multi_select']);
         });
@@ -87,7 +92,10 @@ class AnswerFormRequest extends FormRequest
                     $data[$field['id']] = isset($tmpop['name']) ? $tmpop['name'] : $data[$field['id']];
                 }
             }
-            if (FormLogicPropertyResolver::isRequired($property, $data)) {
+            if (
+                FormLogicPropertyResolver::isRequired($property, $data) &&
+                !FormLogicPropertyResolver::isHidden($property, $data)
+            ) {
                 $rules[] = 'required';
 
                 if ($property['type'] == 'checkbox') {
@@ -131,6 +139,10 @@ class AnswerFormRequest extends FormRequest
         if ($this->form->is_pro && $this->form->editable_submissions) {
             $this->requestRules['submission_id'] = 'string';
         }
+
+        // Add rules for metadata fields
+        $this->requestRules['completion_time'] = 'nullable|integer';
+        $this->requestRules['submission_id'] = 'nullable|string';
 
         return $this->requestRules;
     }

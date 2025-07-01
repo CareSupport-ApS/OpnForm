@@ -194,6 +194,11 @@
       @update:model-value="field = $event"
     />
 
+    <PaymentFieldOptions
+      v-if="field.type === 'payment'"
+      :field="field"
+    />
+
     <!--   Text Options   -->
     <div
       v-if="field.type === 'text' && displayBasedOnAdvanced"
@@ -212,10 +217,19 @@
       <toggle-switch-input
         :form="field"
         name="secret_input"
-        label="Secret input"
         help="Hide input content with * for privacy"
         @update:model-value="onFieldSecretInputChange"
-      />
+      >
+        <template #label>
+          <span class="text-sm">
+            Secret input
+          </span>
+          <pro-tag
+            upgrade-modal-title="Upgrade today to enable secret input"
+            class="-mt-1"
+          />
+        </template>
+      </toggle-switch-input>
     </div>
 
     <!--   Date Options   -->
@@ -477,7 +491,7 @@
         label="Pre-filled value"
       />
       <text-input
-        v-else-if="!['files', 'signature', 'rich_text'].includes(field.type)"
+        v-else-if="!['files', 'signature', 'rich_text', 'payment'].includes(field.type)"
         name="prefill"
         class="mt-3"
         :form="field"
@@ -496,27 +510,38 @@
       </div>
 
       <!--    Placeholder    -->
-      <text-input
-        v-if="hasPlaceholder"
+      <text-area-input
+        v-if="hasPlaceholder && field.type === 'text' && field.multi_lines"
         name="placeholder"
         class="mt-3"
         :form="field"
-        label="Empty Input Text (Placeholder)"
+        label="Empty Input Text - Placeholder"
+      />
+      <text-input
+        v-else-if="hasPlaceholder"
+        name="placeholder"
+        class="mt-3"
+        :form="field"
+        label="Empty Input Text - Placeholder"
       />
 
-      <select-input
+      <OptionSelectorInput
+        v-model="field.width"
         name="width"
-        class="mt-3"
-        :options="[
-          { name: 'Full', value: 'full' },
-          { name: '1/2 (half width)', value: '1/2' },
-          { name: '1/3 (a third of the width)', value: '1/3' },
-          { name: '2/3 (two thirds of the width)', value: '2/3' },
-          { name: '1/4 (a quarter of the width)', value: '1/4' },
-          { name: '3/4 (three quarters of the width)', value: '3/4' },
-        ]"
+        class="mt-4"
         :form="field"
-        label="Field Width"
+        label="Block Width"
+        seamless
+        :options="[
+          { name: 'full', label: 'Full' },
+          { name: '1/2', label: '1/2' },
+          { name: '1/3', label: '1/3' },
+          { name: '2/3', label: '2/3' },
+          { name: '1/4', label: '1/4' },
+          { name: '3/4', label: '3/4' },
+        ]"
+        :multiple="false"
+        :columns="6"
       />
 
       <!--   Help  -->
@@ -525,7 +550,7 @@
         class="mt-3"
         :form="field"
         :editor-toolbar="editorToolbarCustom"
-        label="Field Help"
+        label="Help Text"
         :editor-options="{
           formats: [
             'bold',
@@ -537,18 +562,22 @@
             'list'
           ]
         }"
-        help="Your field help will be shown below/above the field, just like this text."
+        help="Displayed below/above the field, like this text"
         :help-position="field.help_position"
       />
-      <select-input
+      <OptionSelectorInput
+        v-model="field.help_position"
         name="help_position"
-        class="mt-3"
-        :options="[
-          { name: 'Below input', value: 'below_input' },
-          { name: 'Above input', value: 'above_input' },
-        ]"
+        class="mt-4 w-2/3"
         :form="field"
-        label="Field Help Position"
+        label="Help Text Position"
+        seamless
+        :options="[
+          { name: 'below_input', label: 'Below input'},
+          { name: 'above_input', label: 'Above input'},
+        ]"
+        :multiple="false"
+        :columns="2"
         @update:model-value="onFieldHelpPositionChange"
       />
 
@@ -560,6 +589,7 @@
           :form="field"
           label="Max character limit"
           :required="false"
+          class="mt-3"
           @update:model-value="onFieldMaxCharLimitChange"
         />
         <toggle-switch-input
@@ -605,6 +635,7 @@ import timezones from '~/data/timezones.json'
 import countryCodes from '~/data/country_codes.json'
 import CountryFlag from 'vue-country-flag-next'
 import MatrixFieldOptions from './MatrixFieldOptions.vue'
+import PaymentFieldOptions from './PaymentFieldOptions.vue'
 import HiddenRequiredDisabled from './HiddenRequiredDisabled.vue'
 import EditorSectionHeader from '~/components/open/forms/components/form-components/EditorSectionHeader.vue'
 import { format } from 'date-fns'
@@ -613,7 +644,7 @@ import blocksTypes from '~/data/blocks_types.json'
 
 export default {
   name: 'FieldOptions',
-  components: { CountryFlag, MatrixFieldOptions, HiddenRequiredDisabled, EditorSectionHeader },
+  components: { CountryFlag, MatrixFieldOptions, HiddenRequiredDisabled, EditorSectionHeader, PaymentFieldOptions },
   props: {
     field: {
       type: Object,
@@ -629,18 +660,19 @@ export default {
   },
   data() {
     return {
-      typesWithoutPlaceholder: ['date', 'checkbox', 'files'],
+      typesWithoutPlaceholder: ['date', 'checkbox', 'files', 'payment', 'matrix', 'signature', 'barcode', 'scale', 'slider', 'rating'],
       editorToolbarCustom: [
         ['bold', 'italic', 'underline', 'link']
       ],
       allCountries: countryCodes,
       barcodeDecodersOptions: [
+        { name: 'QR Code', value: 'qr_reader' },
         { name: 'EAN-13 (European Article Number)', value: 'ean_reader' },
         { name: 'EAN-8 (European Article Number)', value: 'ean_8_reader' },
         { name: 'UPC-A (Universal Product Code)', value: 'upc_reader' },
         { name: 'UPC-E (Universal Product Code)', value: 'upc_e_reader' },
         { name: 'Code 128', value: 'code_128_reader' },
-        { name: 'Code 39', value: 'code_39_reader' },
+        { name: 'Code 39', value: 'code_39_reader' }
       ]
     }
   },

@@ -4,6 +4,9 @@
       <div class="flex mt-2 items-center">
         <p class="text-sm text-gray-600 dark:text-gray-400 text-center w-full">
           © Copyright {{ currYear }}. All Rights Reserved
+          <span v-if="version">
+            <br>Version {{ version }}
+          </span>
         </p>
       </div>
       <div class="flex justify-center mt-5 md:mt-0">
@@ -51,6 +54,18 @@
           </a>
           <template v-if="!useFeatureFlag('self_hosted')">
             <router-link
+              :to="{ name: 'integrations' }"
+              class="text-gray-600 dark:text-gray-400 transition-colors duration-300 hover:text-nt-blue"
+            >
+              Integrations
+            </router-link>
+            <router-link
+              :to="{ name: 'report-abuse' }"
+              class="text-gray-600 dark:text-gray-400 transition-colors duration-300 hover:text-nt-blue"
+            >
+              Report Abuse
+            </router-link>
+            <router-link
               :to="{ name: 'privacy-policy' }"
               class="text-gray-600 dark:text-gray-400 transition-colors duration-300 hover:text-nt-blue"
             >
@@ -70,22 +85,14 @@
   </div>
 </template>
 
-<script>
-import { computed } from "vue"
+<script setup>
 import opnformConfig from "~/opnform.config.js"
 
-export default {
-  setup() {
-    const authStore = useAuthStore()
-    return {
-      user: computed(() => authStore.user),
-      appStore: useAppStore(),
-      opnformConfig,
-    }
-  },
+const authStore = useAuthStore()
 
-  data: () => ({
-    currYear: new Date().getFullYear(),
-  }),
-}
+const user = computed(() => authStore.user)
+const currYear = ref(new Date().getFullYear())
+
+// Use the reactive version for proper template reactivity
+const version = computed(() => useFeatureFlag('version'))
 </script>

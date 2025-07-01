@@ -31,7 +31,7 @@ class FormController extends Controller
     public function index($workspaceId)
     {
         $workspace = Workspace::findOrFail($workspaceId);
-        $this->authorize('view', $workspace);
+        $this->authorize('ownsWorkspace', $workspace);
         $this->authorize('viewAny', Form::class);
 
         $workspaceIsPro = $workspace->is_pro;
@@ -85,7 +85,7 @@ class FormController extends Controller
     {
         $forms = collect();
         foreach (Auth::user()->workspaces as $workspace) {
-            $this->authorize('view', $workspace);
+            $this->authorize('ownsWorkspace', $workspace);
             $this->authorize('viewAny', Form::class);
 
             $workspaceIsPro = $workspace->is_pro;
@@ -109,7 +109,7 @@ class FormController extends Controller
     public function store(StoreFormRequest $request)
     {
         $workspace = Workspace::findOrFail($request->get('workspace_id'));
-        $this->authorize('view', $workspace);
+        $this->authorize('ownsWorkspace', $workspace);
         $this->authorize('create', [Form::class, $workspace]);
 
         $formData = $this->formCleaner
@@ -120,6 +120,11 @@ class FormController extends Controller
         $form = Form::create(array_merge($formData, [
             'creator_id' => $request->user()->id,
         ]));
+
+        if (config('app.self_hosted') && !empty($formData['slug'])) {
+            $form->slug = $formData['slug'];
+            $form->save();
+        }
 
         if ($this->formCleaner->hasCleaned()) {
             $formStatus = $form->workspace->is_trialing ? 'Non-trial' : 'Pro';
@@ -149,6 +154,8 @@ class FormController extends Controller
         $formData['removed_properties'] = array_merge($form->removed_properties, collect($form->properties)->filter(function ($field) use ($formData) {
             return !Str::of($field['type'])->startsWith('nf-') && !in_array($field['id'], collect($formData['properties'])->pluck('id')->toArray());
         })->toArray());
+
+        $form->slug = (config('app.self_hosted') && !empty($formData['slug'])) ? $formData['slug'] : $form->slug;
 
         $form->update($formData);
 
@@ -228,7 +235,7 @@ class FormController extends Controller
         $fileNameParser = StorageFileNameParser::parse($request->url);
 
         // Make sure we retrieve the file in tmp storage, move it to persistent
-        $fileName = PublicFormController::TMP_FILE_UPLOAD_PATH . '/' . $fileNameParser->uuid;
+        $fileName = PublicFormController::TMP_FILE_UPLOAD_PATH . $fileNameParser->uuid;
         if (!Storage::exists($fileName)) {
             // File not found, we skip
             return null;
@@ -269,7 +276,7 @@ class FormController extends Controller
         $workspace =  Workspace::findOrFail($workspace_id);
 
         $this->authorize('update', $form);
-        $this->authorize('view', $workspace);
+        $this->authorize('ownsWorkspace', $workspace);
 
         $form->workspace_id = $workspace_id;
         $form->creator_id = auth()->user()->id;

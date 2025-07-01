@@ -12,12 +12,10 @@ function mergeOptions(options) {
     max: 30,
     persistent: false,
     persistentStrategy: {
-      // eslint-disable-next-line no-unused-vars
-      get: function (store, type) {
+      get: function (_store, _type) {
         // Todo
       },
-      // eslint-disable-next-line no-unused-vars
-      set: function (store, type, value) {
+      set: function (_store, _type, _value) {
         // Todo
       },
       remove: function (store, type) {
@@ -27,13 +25,33 @@ function mergeOptions(options) {
         }
       }
     },
-    debounceWait: 300
+    debounceWait: 300,
+    ignoreKeys: [] // Keys to ignore in history tracking
   }
 
   return {
     ...defaults,
     ...(typeof options === 'boolean' ? {} : options)
   }
+}
+
+/**
+ * Filters out ignored keys from the state object
+ * @param {Object} state - The state object to filter
+ * @param {Array} ignoreKeys - Array of keys to ignore
+ * @returns {Object} Filtered state object
+ */
+function filterState(state, ignoreKeys) {
+  if (!ignoreKeys || ignoreKeys.length === 0) {
+    return state
+  }
+  
+  const filteredState = { ...state }
+  ignoreKeys.forEach(key => {
+    delete filteredState[key]
+  })
+  
+  return filteredState
 }
 
 /**
@@ -48,7 +66,7 @@ const PiniaHistory = (context) => {
     return
   }
   const mergedOptions = mergeOptions(history)
-  const {max, persistent, persistentStrategy} = mergedOptions
+  const {max, persistent, persistentStrategy, ignoreKeys} = mergedOptions
 
   const $history = reactive({
     max,
@@ -56,19 +74,23 @@ const PiniaHistory = (context) => {
     persistentStrategy,
     done: [],
     undone: [],
-    current: JSON.stringify(store.$state),
+    current: JSON.stringify(filterState(store.$state, ignoreKeys)),
     trigger: true,
   })
 
   const debouncedStoreUpdate = debounce((state) => {
-    if (hash($history.current) === hash(JSON.stringify(state))) { // Not a real change here
+    const filteredState = filterState(state, ignoreKeys)
+    const currentStateHash = hash($history.current)
+    const newStateHash = hash(JSON.stringify(filteredState))
+    
+    if (currentStateHash === newStateHash) { // Not a real change here
       return
     }
     if ($history.done.length >= max) $history.done.shift() // Remove oldest state if needed
 
     $history.done.push($history.current)
     $history.undone = [] // Clear redo history on new action
-    $history.current = JSON.stringify(state)
+    $history.current = JSON.stringify(filteredState)
 
     if (persistent) {
       persistentStrategy.set(store, 'undo', $history.done)
@@ -92,7 +114,9 @@ const PiniaHistory = (context) => {
 
     $history.undone.push($history.current) // Save current state for redo
     $history.trigger = false
-    store.$patch(JSON.parse(state))
+    // Only patch the state that was tracked (filtered state)
+    const stateToRestore = JSON.parse(state)
+    store.$patch(stateToRestore)
     nextTick(() => {
       $history.current = state
       $history.trigger = true
@@ -116,7 +140,9 @@ const PiniaHistory = (context) => {
 
     $history.done.push($history.current) // Save current state for undo
     $history.trigger = false
-    store.$patch(JSON.parse(state))
+    // Only patch the state that was tracked (filtered state)
+    const stateToRestore = JSON.parse(state)
+    store.$patch(stateToRestore)
     nextTick(() => {
       $history.current = state
       $history.trigger = true

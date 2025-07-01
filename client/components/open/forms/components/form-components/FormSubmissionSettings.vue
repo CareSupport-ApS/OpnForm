@@ -24,12 +24,21 @@
       :form="form"
       label="Auto save form response"
       help="Saves form progress, allowing respondents to resume later."
+      class="mt-4"
+      :disabled="hasPaymentBlock"
+    />
+    <UAlert
+      v-if="hasPaymentBlock"
+      color="primary"
+      variant="subtle"
+      title="Must be enabled with a payment block."
+      class="max-w-md"
     />
     
     <flat-select-input
       :form="submissionOptions"
       name="databaseAction"
-      class="max-w-xs"
+      class="mt-4 max-w-xs"
       label="Database Submission Action"
       :options="[
         { name: 'Create new record', value: 'create' },
@@ -67,6 +76,31 @@
       </div>
     </div>
 
+    <!-- Advanced Submission Settings -->
+    <h4 class="font-semibold mt-4 border-t pt-4">
+      Advanced Submission Options <pro-tag />
+    </h4>
+    <p class="text-gray-500 text-sm mb-4">
+      Configure advanced options for form submissions and data collection.
+    </p>
+    
+    <ToggleSwitchInput
+      name="enable_partial_submissions"
+      :form="form"
+      help="Capture incomplete form submissions to analyze user drop-off points and collect partial data even when users don't complete the entire form."
+    >
+      <template #label>
+        <span class="text-sm">
+          Collect partial submissions
+        </span>
+        <ProTag
+          class="ml-1"
+          upgrade-modal-title="Upgrade to collect partial submissions"
+          upgrade-modal-description="Capture valuable data from incomplete form submissions. Analyze where users drop off and collect partial information even when they don't complete the entire form."
+        />
+      </template>
+    </ToggleSwitchInput>
+
     <!-- Post-Submission Behavior -->
     <h4 class="font-semibold mt-4 border-t pt-4">
       After Submission <pro-tag
@@ -81,7 +115,7 @@
       class="w-full"
       :class="{'flex flex-wrap gap-x-4':submissionOptions.submissionMode === 'redirect'}"
     >
-      <select-input
+      <flat-select-input
         :form="submissionOptions"
         name="submissionMode"
         class="w-full max-w-xs"
@@ -116,7 +150,7 @@
             </span>
           </span>
         </template>
-      </select-input>
+      </flat-select-input>
       <template v-if="submissionOptions.submissionMode === 'redirect'">
         <MentionInput
           name="redirect_url"
@@ -133,7 +167,7 @@
           enable-mentions
           :mentions="form.properties"
           name="submitted_text"
-          class="w-full"
+          class="w-full mt-4"
           :form="form"
           label="Success page text"
           :required="false"
@@ -207,7 +241,7 @@ const filterableFields = computed(() => {
     .filter((field) => {
       return (
         !field.hidden &&
-        !["files", "signature", "multi_select"].includes(field.type)
+        !["files", "signature", "multi_select", "matrix", 'payment'].includes(field.type)
       )
     })
     .map((field) => {
@@ -231,4 +265,8 @@ watch(submissionOptions, (val) => {
   if (val.submissionMode === 'default') form.value.redirect_url = null
   if (val.databaseAction === 'create') form.value.database_fields_update = null
 }, { deep: true })
+
+const hasPaymentBlock = computed(() => {
+  return form.value.properties.some(property => property.type === 'payment')
+})
 </script>

@@ -58,7 +58,7 @@
       </div>
     </template>
 
-    <div class="w-full border-t pt-4">
+    <div class="w-full border-t pt-4 mt-4">
       <h4 class="font-semibold">
         Link Privacy
       </h4>
@@ -69,6 +69,22 @@
         name="can_be_indexed"
         :form="form"
         label="Indexable by Google"
+      />
+    </div>
+
+    <div v-if="useFeatureFlag('self_hosted')" class="w-full border-t pt-4 mt-4">
+      <h4 class="font-semibold">
+        Custom Form URL
+      </h4>
+      <p class="text-gray-500 text-sm mb-4">
+        Create a custom URL for your form. This will be the unique identifier in your form's URL.
+      </p>
+      <text-input
+        :form="form"
+        name="slug"
+        class="mt-4 max-w-xs"
+        label="Custom Form URL"
+        help="Use only lowercase letters, numbers, and hyphens. Example: my-custom-form"
       />
     </div>
   </SettingsSection>
@@ -114,7 +130,7 @@ export default {
         this.form.seo_meta[keyname] = null
     })
 
-    if (this.form.custom_domain && !this.workspace.custom_domains.find((item) => { return item === this.form.custom_domain })) {
+    if (this.form.custom_domain && this.workspace?.custom_domains && !this.workspace.custom_domains.find((item) => { return item === this.form.custom_domain })) {
       this.form.custom_domain = null
     }
   }

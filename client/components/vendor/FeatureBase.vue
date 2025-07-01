@@ -54,7 +54,7 @@ const setupForUser = () => {
 }
 
 onMounted(() => {
-  if (import.meta.server) return
+  if (import.meta.server || !user.value) return
 
   // Setup base
   if (
@@ -66,16 +66,23 @@ onMounted(() => {
     }
   }
 
-  if (!user.value) return
   loadScript()
-  setupForUser()
+  try {
+    setupForUser()
+  } catch (error) {
+    console.error(error)
+  }
 })
 
 watch(user, (val) => {
   if (import.meta.server || !val) return
 
   loadScript()
-  setupForUser()
+  try {
+    setupForUser()
+  } catch (error) {
+    console.error(error)
+  }
 })
 </script>
 

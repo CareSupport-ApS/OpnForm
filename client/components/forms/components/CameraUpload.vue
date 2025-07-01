@@ -1,7 +1,10 @@
 <template>
-  <div class="relative border">
+  <div
+    class="relative overflow-hidden"
+    :class="[theme.fileInput.borderRadius]"
+  >
     <video
-      id="webcam"
+      ref="webcamRef"
       autoplay
       playsinline
       muted
@@ -9,59 +12,85 @@
         { hidden: !isCapturing }, 
         theme.fileInput.minHeight, 
         theme.fileInput.borderRadius,
-        'w-full h-full object-cover'
+        'w-full h-full object-cover bg-gray-500'
       ]"
       webkit-playsinline
     />
     <canvas
-      id="canvas"
-      :class="{ hidden: !capturedImage }"
+      ref="canvasRef"
+      :class="[
+        { hidden: !capturedImage },
+        theme.fileInput.borderRadius,
+        theme.fileInput.minHeight,
+        'w-full h-full object-cover'
+      ]"
     />
+    
+    <!-- Barcode scanning overlay -->
+    <div 
+      v-if="isCapturing && isBarcodeMode" 
+      class="absolute inset-0 pointer-events-none"
+    >
+      <!-- Scanning area (transparent window) -->
+      <div
+        class="absolute inset-0 flex items-strech justify-center px-8 py-12"
+      >
+        <div class="flex-grow w-full relative">
+          <!-- Corner indicators -->
+          <div class="absolute top-0 left-0 w-8 h-8 border-t-2 border-l-2 rounded-tl-md border-white" />
+          <div class="absolute top-0 right-0 w-8 h-8 border-t-2 border-r-2 rounded-tr-md border-white" />
+          <div class="absolute bottom-0 left-0 w-8 h-8 border-b-2 border-l-2 rounded-bl-md border-white" />
+          <div class="absolute bottom-0 right-0 w-8 h-8 border-b-2 border-r-2 rounded-br-md border-white" />
+        </div>
+      </div>
+    </div>
+    
     <div
       v-if="cameraPermissionStatus === 'allowed'"
       class="absolute inset-x-0 grid place-content-center bottom-2"
     >
       <div
         v-if="isCapturing"
-        class="p-2 px-4 flex items-center justify-center text-xs space-x-2"
+        class="p-2 px-4 flex items-center justify-center text-xs space-x-3"
       >
         <span
           v-if="!isBarcodeMode"
-          class="cursor-pointer rounded-full w-14 h-14 border-2 grid place-content-center"
+          class="cursor-pointer rounded-full w-12 h-12 border-2 grid place-content-center bg-white/20 backdrop-blur-sm shadow-md"
           @click="processCapturedImage"
         >
           <span
-            class="cursor-pointer bg-gray-100 rounded-full w-10 h-10 grid place-content-center"
+            class="cursor-pointer bg-white rounded-full w-8 h-8 grid place-content-center"
           />
         </span>
         <span
-          class="text-white cursor-pointer"
+          class="text-white cursor-pointer bg-black/40 rounded-full backdrop-blur-sm shadow-md w-12 h-12 grid place-content-center"
           @click="cancelCamera"
         >
           <Icon
             name="heroicons:x-mark"
-            class="w-8 h-8"
+            class="w-6 h-6"
           />
         </span>
         <span
           v-if="isMobileDevice"
-          class="text-white cursor-pointer"
+          class="text-white cursor-pointer bg-black/40 rounded-full backdrop-blur-sm shadow-md w-12 h-12 grid place-content-center"
           @click="switchCamera"
         >
           <Icon
             name="heroicons:arrow-path"
-            class="w-8 h-8"
+            class="w-6 h-6"
           />
         </span>
       </div>
     </div>
     <div
       v-else-if="cameraPermissionStatus === 'blocked'"
-      class="absolute p-5 top-0 inset-x-0 flex flex-col items-center justify-center space-y-4 text-center rounded border border-gray-400/30 h-full"
+      class="absolute p-5 top-0 inset-x-0 flex flex-col items-center justify-center space-y-4 text-center border border-gray-400/30 h-full"
+      :class="[theme.fileInput.borderRadius]"
       @click="openCameraUpload"
     >
       <Icon
-        name="heroicons:camera"
+        :name="isBarcodeMode ? 'i-material-symbols-barcode-scanner-rounded' : 'i-heroicons-camera'"
         class="w-6 h-6"
       />
       <p class="text-center font-bold">
@@ -80,7 +109,8 @@
 
     <div
       v-else-if="cameraPermissionStatus === 'loading'"
-      class="absolute p-5 top-0 inset-x-0 flex flex-col items-center justify-center space-y-4 text-center rounded border border-gray-400/30 h-full"
+      class="absolute p-5 top-0 inset-x-0 flex flex-col items-center justify-center space-y-4 text-center border border-gray-400/30 h-full"
+      :class="[theme.fileInput.borderRadius]"
     >
       <div class="w-6 h-6">
         <Loader />
@@ -88,11 +118,12 @@
     </div>
     <div
       v-else
-      class="absolute p-5 top-0 inset-x-0 flex flex-col items-center justify-center space-y-4 text-center rounded border border-gray-400/30 h-full"
+      class="absolute p-5 top-0 inset-x-0 flex flex-col items-center justify-center space-y-4 text-center border border-gray-400/30 h-full"
+      :class="[theme.fileInput.borderRadius]"
       @click="openCameraUpload"
     >
       <Icon
-        name="heroicons:video-camera-slash"
+        :name="isBarcodeMode ? 'i-material-symbols-barcode-scanner-rounded' : 'heroicons:video-camera-slash'"
         class="w-6 h-6"
       />
       <p class="text-center font-bold">
@@ -114,7 +145,7 @@
 <script>
 import Webcam from "webcam-easy"
 import CachedDefaultTheme from "~/lib/forms/themes/CachedDefaultTheme.js"
-import Quagga from 'quagga'
+import { BrowserMultiFormatReader, DecodeHintType, BarcodeFormat } from '@zxing/library'
 
 export default {
   name: "CameraUpload",
@@ -143,7 +174,7 @@ export default {
     isCapturing: false,
     capturedImage: null,
     cameraPermissionStatus: "loading",
-    quaggaInitialized: false,
+    zxingReader: null,
     currentFacingMode: 'user',
     mediaStream: null
   }),
@@ -159,49 +190,55 @@ export default {
     }
   },
   mounted() {
-    const webcamElement = document.getElementById("webcam")
-    const canvasElement = document.getElementById("canvas")
-    this.webcam = new Webcam(webcamElement, "user", canvasElement)
+    // For regular camera mode, we still need the webcam.js setup
+    if (!this.isBarcodeMode) {
+      this.webcam = new Webcam(this.$refs.webcamRef, "user", this.$refs.canvasRef)
+    }
     this.openCameraUpload()
+  },
+
+  beforeUnmount() {
+    this.cleanupCurrentStream()
   },
 
   methods: {
     async cleanupCurrentStream() {
-      if (this.quaggaInitialized) {
-        Quagga.stop()
-        this.quaggaInitialized = false
-      }
-
-      if (this.mediaStream) {
-        this.mediaStream.getTracks().forEach(track => track.stop())
-        this.mediaStream = null
+      if (this.zxingReader) {
+        this.zxingReader.reset()
+        this.zxingReader = null
       }
 
       if (this.webcam) {
         this.webcam.stop()
+        this.webcam = null
       }
 
-      const webcamElement = document.getElementById("webcam")
-      if (webcamElement && webcamElement.srcObject) {
-        webcamElement.srcObject = null
+      // Clean up video element if needed
+      if (this.$refs.webcamRef && this.$refs.webcamRef.srcObject) {
+        const tracks = this.$refs.webcamRef.srcObject.getTracks()
+        tracks.forEach(track => track.stop())
+        this.$refs.webcamRef.srcObject = null
       }
     },
 
     async switchCamera() {
+      if (!this.isMobileDevice) return
+      
       try {
-        // Stop current camera
-        if (this.quaggaInitialized) {
-          Quagga.stop()
-          this.quaggaInitialized = false
-        }
-        this.webcam.stop()
+        // Stop current camera and clean up resources
+        this.cleanupCurrentStream()
 
-        // Toggle facing mode considering barcode mode
-        this.currentFacingMode = this.isBarcodeMode ? 'environment' : 
-          (this.currentFacingMode === 'user' ? 'environment' : 'user')
+        // Toggle facing mode
+        this.currentFacingMode = this.currentFacingMode === 'user' ? 'environment' : 'user'
 
         // Restart camera
-        await this.openCameraUpload()
+        if (this.isBarcodeMode) {
+          setTimeout(() => {
+            this.initZxingDirect()
+          }, 500)
+        } else {
+          await this.openCameraUpload()
+        }
       } catch (error) {
         console.error('Error switching camera:', error)
         this.cameraPermissionStatus = "unknown"
@@ -213,38 +250,70 @@ export default {
       this.capturedImage = null
 
       try {
-        const webcamElement = document.getElementById("webcam")
-        const canvasElement = document.getElementById("canvas")
+        if (this.isBarcodeMode) {
+          // For barcode mode, let ZXing handle everything
+          this.cameraPermissionStatus = "allowed"
+          setTimeout(() => {
+            this.initZxingDirect()
+          }, 500)
+          return
+        }
 
+        // Regular camera mode - use existing logic
+        // Determine the facing mode to use
+        let facingMode = this.currentFacingMode
+
+        // Create constraints based on device capabilities
         const constraints = {
           audio: false,
           video: {
-            facingMode: this.isBarcodeMode ? 'environment' : this.currentFacingMode,
             width: { ideal: 1280 },
             height: { ideal: 720 }
           }
         }
 
-        const stream = await navigator.mediaDevices.getUserMedia(constraints)
-        webcamElement.srcObject = stream
+        // Use exact constraints for mobile devices to ensure proper camera selection
+        if (this.isMobileDevice) {
+          constraints.video.facingMode = { exact: facingMode }
+        } else {
+          constraints.video.facingMode = facingMode
+        }
+
+        // Try to get the stream with the specified constraints
+        let stream
+        try {
+          stream = await navigator.mediaDevices.getUserMedia(constraints)
+        } catch (err) {
+          // If exact constraint fails, fall back to preference
+          if (this.isMobileDevice && err.name === 'OverconstrainedError') {
+            constraints.video.facingMode = facingMode
+            stream = await navigator.mediaDevices.getUserMedia(constraints)
+          } else {
+            throw err
+          }
+        }
+
+        this.mediaStream = stream  // Store the stream reference
+        this.$refs.webcamRef.srcObject = stream
         
         this.webcam = new Webcam(
-          webcamElement,
-          this.isBarcodeMode ? 'environment' : this.currentFacingMode,
-          canvasElement
+          this.$refs.webcamRef,
+          facingMode,
+          this.$refs.canvasRef
         )
         
         await new Promise((resolve) => {
-          webcamElement.onloadedmetadata = () => {
-            webcamElement.play()
-            resolve()
+          this.$refs.webcamRef.onloadedmetadata = () => {
+            this.$refs.webcamRef.play().then(() => {
+              resolve()
+            }).catch(err => {
+              console.error('Error playing video:', err)
+              resolve() // Continue anyway
+            })
           }
         })
 
         this.cameraPermissionStatus = "allowed"
-        if (this.isBarcodeMode) {
-          this.initQuagga()
-        }
       } catch (err) {
         console.error('Camera error:', err)
         if (err.name === 'NotAllowedError' || err.toString().includes('Permission denied')) {
@@ -254,50 +323,92 @@ export default {
         }
       }
     },
-    initQuagga() {
-      if (!this.quaggaInitialized) {
-        Quagga.init({
-          inputStream: {
-            name: "Live",
-            type: "LiveStream",
-            target: document.getElementById("webcam"),
-            constraints: {
-              facingMode: "environment"
-            },
-          },
-          decoder: {
-            readers: this.decoders || []
-          },
-          locate: true
-        }, (err) => {
-          if (err) {
-            console.error('Quagga initialization failed:', err)
-            return
-          }
-          
-          this.quaggaInitialized = true
-          Quagga.start()
-          
-          Quagga.onDetected((result) => {
-            if (result.codeResult) {
-              this.$emit('barcodeDetected', result.codeResult.code)
-              this.cancelCamera()
-            }
-          })
-        })
+    initZxingDirect() {
+      if (this.zxingReader) {
+        this.zxingReader.reset()
+        this.zxingReader = null
       }
+
+      const hints = new Map()
+      const formats = (this.decoders || []).map(decoder => {
+        // Map decoder strings to BarcodeFormat enum values
+        // Remove _reader suffix for mapping
+        const cleanDecoder = decoder.replace('_reader', '').toLowerCase()
+        
+        switch(cleanDecoder) {
+          case 'ean_8': return BarcodeFormat.EAN_8
+          case 'ean': 
+          case 'ean_13': return BarcodeFormat.EAN_13
+          case 'upc':
+          case 'upc_a': return BarcodeFormat.UPC_A
+          case 'upc_e': return BarcodeFormat.UPC_E
+          case 'code_39': return BarcodeFormat.CODE_39
+          case 'code_93': return BarcodeFormat.CODE_93
+          case 'code_128': return BarcodeFormat.CODE_128
+          case 'codabar': return BarcodeFormat.CODABAR
+          case 'itf': return BarcodeFormat.ITF
+          case 'qr':
+          case 'qr_code': return BarcodeFormat.QR_CODE
+          case 'data_matrix': return BarcodeFormat.DATA_MATRIX
+          case 'aztec': return BarcodeFormat.AZTEC
+          case 'pdf_417': return BarcodeFormat.PDF_417
+          default: 
+            console.warn('Unsupported barcode format:', decoder)
+            return null
+        }
+      }).filter(format => format !== null)
+
+      if (formats.length > 0) {
+        hints.set(DecodeHintType.POSSIBLE_FORMATS, formats)
+      }
+
+      this.zxingReader = new BrowserMultiFormatReader(hints)
+
+      // Use simple constraints approach instead of device enumeration
+      const facingMode = this.isMobileDevice && this.currentFacingMode === 'user' ? 'environment' : this.currentFacingMode
+      const constraints = {
+        audio: false,
+        video: {
+          facingMode: facingMode,
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        }
+      }
+
+      // Use ZXing's decodeFromConstraints method
+      this.zxingReader.decodeFromConstraints(constraints, this.$refs.webcamRef, (result, error) => {
+        if (result) {
+          this.$emit('barcodeDetected', result.text)
+        }
+        // Don't log NotFoundException errors - they're expected during scanning
+        // Only log other types of errors
+        else if (error && error.name && !error.name.includes('NotFoundException') && !error.message?.includes('No MultiFormat Readers')) {
+          console.error('ZXing decoding error:', error.name, error.message)
+        }
+      })
+      .then(() => {
+        this.cameraPermissionStatus = "allowed"
+      })
+      .catch(err => {
+        console.error('Camera error in ZXing Direct:', err)
+        if (err.name === 'NotAllowedError' || err.toString().includes('Permission denied')) {
+          this.cameraPermissionStatus = "blocked"
+        } else {
+          this.cameraPermissionStatus = "unknown"
+        }
+      })
     },
     cancelCamera() {
       this.isCapturing = false
       this.capturedImage = null
-      if (this.quaggaInitialized) {
-        Quagga.stop()
-        this.quaggaInitialized = false
-      }
-      this.webcam.stop()
+      this.cleanupCurrentStream()  // Use the cleanup method
       this.$emit("stopWebcam")
     },
     processCapturedImage() {
+      if (!this.webcam) {
+        return
+      }
+      
       this.capturedImage = this.webcam.snap()
       this.isCapturing = false
       this.webcam.stop()
@@ -323,3 +434,4 @@ export default {
   },
 }
 </script>
+

@@ -163,7 +163,9 @@ class FormSubmissionFormatter
                     $formId = $this->form->id;
                     $returnArray[$field['name']] = implode(
                         ', ',
-                        collect($data[$field['id']])->map(function ($file) use ($formId) {
+                        collect($data[$field['id']])->filter(function ($file) {
+                            return !is_null($file) && !empty($file);
+                        })->map(function ($file) use ($formId) {
                             return $this->getFileUrl($formId, $file);
                         })->toArray()
                     );
@@ -213,7 +215,7 @@ class FormSubmissionFormatter
             } elseif ($this->createLinks && $field['type'] == 'email') {
                 $field['value'] = '<a href="mailto:' . $data[$field['id']] . '">' . $data[$field['id']] . '</a>';
             } elseif ($field['type'] == 'checkbox') {
-                $field['value'] = $data[$field['id']] ? 'Yes' : 'No';
+                $field['value'] = $data[$field['id']] ? trans('validation.yes') : trans('validation.no');
             } elseif ($field['type'] == 'date') {
                 $dateFormat = ($field['date_format'] ?? 'dd/MM/yyyy') == 'dd/MM/yyyy' ? 'd/m/Y' : 'm/d/Y';
                 if (isset($field['with_time']) && $field['with_time']) {
@@ -289,9 +291,14 @@ class FormSubmissionFormatter
 
     private function getFileUrl($formId, $file)
     {
-        return $this->useSignedUrlForFiles ? \URL::signedRoute(
-            'open.forms.submissions.file',
-            [$formId, $file]
-        ) : route('open.forms.submissions.file', [$formId, $file]);
+        try {
+            return $this->useSignedUrlForFiles ? \URL::signedRoute(
+                'open.forms.submissions.file',
+                [$formId, $file]
+            ) : route('open.forms.submissions.file', [$formId, $file]);
+        } catch (\Exception $e) {
+            throw $e;
+            return null;
+        }
     }
 }

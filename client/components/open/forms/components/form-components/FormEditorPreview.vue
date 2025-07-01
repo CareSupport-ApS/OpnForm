@@ -18,7 +18,7 @@
       class="border rounded-lg bg-white dark:bg-notion-dark w-full block shadow-sm transition-all flex flex-col"
       :class="{ 'max-w-5xl': !isExpanded, 'h-full': isExpanded }"
     >
-      <div class="w-full bg-white dark:bg-gray-950 border-b border-gray-300 dark:border-blue-900 dark:border-gray-700 rounded-t-lg p-1.5 px-4 flex items-center gap-x-1.5">
+      <div class="w-full bg-white dark:bg-gray-950 border-b border-gray-300 dark:border-blue-900 dark:border-gray-700 rounded-t-lg p-1.5 pl-4 pr-1.5 flex items-center gap-x-1.5">
         <div class="bg-red-500 rounded-full w-2.5 h-2.5" />
         <div class="bg-yellow-500 rounded-full w-2.5 h-2.5" />
         <div class="bg-green-500 rounded-full w-2.5 h-2.5" />
@@ -92,11 +92,9 @@
           ref="formPreview"
           class="w-full mx-auto py-5"
           :class="{'max-w-lg': form && (form.width === 'centered'),'px-7': !isExpanded, 'px-3': isExpanded}"
-          :creating="creating"
           :form="form"
           :dark-mode="darkMode"
-          :admin-preview="!isExpanded"
-          :show-cleanings="false"
+          :mode="formMode"
           @restarted="previewFormSubmitted=false"
           @submitted="previewFormSubmitted=true"
         />
@@ -109,10 +107,10 @@
 import { computed, ref, watch, onMounted } from 'vue'
 import OpenCompleteForm from '../../OpenCompleteForm.vue'
 import {handleDarkMode, useDarkMode} from "~/lib/forms/public-page.js"
-import { default as _has } from 'lodash/has'
 import { useRecordsStore } from '~/stores/records'
 import { useWorkingFormStore } from '~/stores/working_form'
 import { storeToRefs } from 'pinia'
+import { FormMode } from "~/lib/forms/FormModeStrategy.js"
 
 const recordsStore = useRecordsStore()
 const workingFormStore = useWorkingFormStore()
@@ -126,7 +124,8 @@ const { content: form } = storeToRefs(workingFormStore)
 const recordLoading = computed(() => recordsStore.loading)
 const darkMode = useDarkMode(parent)
 
-const creating = computed(() => !_has(form.value, 'id'))
+// Use PREVIEW mode when not expanded, TEST mode when expanded
+const formMode = computed(() => isExpanded.value ? FormMode.TEST : FormMode.PREVIEW)
 
 defineShortcuts({
   escape: {
@@ -143,6 +142,13 @@ watch(() => form.value.dark_mode, () => {
   handleDarkModeChange()
 })
 
+// Watch for form mode changes to reset the form when switching modes
+watch(formMode, () => {
+  if (previewFormSubmitted.value) {
+    restartForm()
+  }
+})
+
 onMounted(() => {
   handleDarkModeChange()
 })
@@ -151,7 +157,7 @@ function coverPictureSrc(val) {
   try {
     // Is valid url
     new URL(val)
-  } catch (_) {
+  } catch {
     // Is file
     return URL.createObjectURL(val)
   }
@@ -164,7 +170,16 @@ function handleDarkModeChange() {
 
 function restartForm() {
   previewFormSubmitted.value = false
-  formPreview.value.restart()
+  
+  try {
+    // Try using the component reference first
+    if (formPreview.value && typeof formPreview.value.restart === 'function') {
+      formPreview.value.restart()
+      return
+    }
+  } catch (error) {
+    console.error('Error restarting form:', error)
+  }
 }
 
 function toggleExpand() {

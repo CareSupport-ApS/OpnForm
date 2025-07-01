@@ -33,7 +33,8 @@ class FormCleaner
         'editable_submissions' => false,
         'custom_code' => null,
         'seo_meta' => [],
-        'redirect_url' => null
+        'redirect_url' => null,
+        'enable_partial_submissions' => false,
     ];
 
     private array $formNonTrialingDefaults = [
@@ -44,6 +45,7 @@ class FormCleaner
     private array $fieldDefaults = [
         // 'name' => '' TODO: prevent name changing, use alias for column and keep original name as it is
         'file_upload' => false,
+        'secret_input' => false,
     ];
 
     private array $cleaningMessages = [
@@ -54,10 +56,12 @@ class FormCleaner
         'custom_code' => 'Custom code was disabled',
         'seo_meta' => 'Custom SEO was disabled',
         'redirect_url' => 'Redirect Url was disabled',
+        'enable_partial_submissions' => 'Partial submissions were disabled',
 
         // For fields
         'file_upload' => 'Link field is not a file upload.',
         'custom_block' => 'The custom block was removed.',
+        'secret_input' => 'Secret input was disabled.',
     ];
 
     /**

@@ -14,7 +14,6 @@ use App\Http\Controllers\Forms\Integration\FormIntegrationsController;
 use App\Http\Controllers\Forms\Integration\FormIntegrationsEventController;
 use App\Http\Controllers\Forms\Integration\FormZapierWebhookController;
 use App\Http\Controllers\Forms\PublicFormController;
-use App\Http\Controllers\Forms\RecordController;
 use App\Http\Controllers\Settings\OAuthProviderController;
 use App\Http\Controllers\Settings\PasswordController;
 use App\Http\Controllers\Settings\ProfileController;
@@ -22,6 +21,7 @@ use App\Http\Controllers\Settings\TokenController;
 use App\Http\Controllers\SubscriptionController;
 use App\Http\Controllers\Forms\TemplateController;
 use App\Http\Controllers\Auth\UserInviteController;
+use App\Http\Controllers\Forms\FormPaymentController;
 use App\Http\Controllers\WorkspaceController;
 use App\Http\Controllers\WorkspaceUserController;
 use App\Http\Middleware\Form\ResolveFormMiddleware;
@@ -29,6 +29,7 @@ use Illuminate\Foundation\Http\Middleware\HandlePrecognitiveRequests;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Storage;
+use App\Http\Controllers\HealthCheckController;
 
 /*
 |--------------------------------------------------------------------------
@@ -41,7 +42,11 @@ use Illuminate\Support\Facades\Storage;
 |
 */
 
-Route::group(['middleware' => 'auth:api'], function () {
+if (config('app.self_hosted')) {
+    Route::get('/healthcheck', [HealthCheckController::class, 'apiCheck']);
+}
+
+Route::group(['middleware' => 'auth.multi'], function () {
     Route::post('logout', [LoginController::class, 'logout'])->name('logout');
     Route::post('update-credentials', [ProfileController::class, 'updateAdminCredentials'])->name('credentials.update');
 
@@ -52,7 +57,7 @@ Route::group(['middleware' => 'auth:api'], function () {
         Route::patch('/profile', [ProfileController::class, 'update']);
         Route::patch('/password', [PasswordController::class, 'update']);
 
-        Route::prefix('/tokens')->name('tokens.')->group(function () {
+        Route::prefix('/tokens')->name('tokens.')->middleware('require-pro')->group(function () {
             Route::get('/', [TokenController::class, 'index'])->name('index');
             Route::post('/', [TokenController::class, 'store'])->name('store');
             Route::delete('{token}', [TokenController::class, 'destroy'])->name('destroy');
@@ -61,6 +66,7 @@ Route::group(['middleware' => 'auth:api'], function () {
         Route::prefix('/providers')->name('providers.')->group(function () {
             Route::post('/connect/{service}', [OAuthProviderController::class, 'connect'])->name('connect');
             Route::post('/callback/{service}', [OAuthProviderController::class, 'handleRedirect'])->name('callback');
+            Route::post('widget-callback/{service}', [OAuthProviderController::class, 'handleWidgetRedirect'])->name('widget.callback');
             Route::delete('/{provider}', [OAuthProviderController::class, 'destroy'])->name('destroy');
         });
     });
@@ -156,19 +162,20 @@ Route::group(['middleware' => 'auth:api'], function () {
         Route::prefix('forms')->name('forms.')->group(function () {
             Route::post('/', [FormController::class, 'store'])->name('store');
             Route::post('/{id}/workspace/{workspace_id}', [FormController::class, 'updateWorkspace'])->name('workspace.update');
-            Route::put('/{id}', [FormController::class, 'update'])->name('update');
+            Route::put('/{id}', [FormController::class, 'update'])->name('update')->middleware([ResolveFormMiddleware::class]);
             Route::delete('/{id}', [FormController::class, 'destroy'])->name('destroy');
             Route::get('/{id}/mobile-editor-email', [FormController::class, 'mobileEditorEmail'])->name('mobile-editor-email');
 
-            Route::get('/{id}/submissions', [FormSubmissionController::class, 'submissions'])->name('submissions');
-            Route::put('/{id}/submissions/{submission_id}', [FormSubmissionController::class, 'update'])->name('submissions.update')->middleware([ResolveFormMiddleware::class]);
-            Route::post('/{id}/submissions/export', [FormSubmissionController::class, 'export'])->name('submissions.export');
-            Route::get('/{id}/submissions/file/{filename}', [FormSubmissionController::class, 'submissionFile'])
-                ->middleware('signed')
-                ->withoutMiddleware(['auth:api'])
-                ->name('submissions.file');
-
-            Route::delete('/{id}/records/{recordid}/delete', [RecordController::class, 'delete'])->name('records.delete');
+            Route::prefix('/{id}/submissions')->name('submissions.')->group(function () {
+                Route::get('/', [FormSubmissionController::class, 'submissions'])->name('index');
+                Route::put('/{submission_id}', [FormSubmissionController::class, 'update'])->name('update')->middleware([ResolveFormMiddleware::class]);
+                Route::post('/export', [FormSubmissionController::class, 'export'])->name('export');
+                Route::get('/file/{filename}', [FormSubmissionController::class, 'submissionFile'])
+                    ->middleware('signed')
+                    ->withoutMiddleware(['auth.multi'])
+                    ->name('file');
+                Route::delete('/{submission_id}', [FormSubmissionController::class, 'destroy'])->name('destroy');
+            });
 
             // Form Admin tool
             Route::put(
@@ -186,7 +193,7 @@ Route::group(['middleware' => 'auth:api'], function () {
             Route::post(
                 '/assets/upload',
                 [FormController::class, 'uploadAsset']
-            )->withoutMiddleware(['auth:api'])->name('assets.upload');
+            )->withoutMiddleware(['auth.multi'])->name('assets.upload');
             Route::get(
                 '/{id}/uploaded-file/{filename}',
                 [FormController::class, 'viewFile']
@@ -225,6 +232,10 @@ Route::group(['middleware' => 'auth:api'], function () {
     });
 
     Route::group(['middleware' => 'moderator', 'prefix' => 'moderator'], function () {
+        Route::post(
+            'create-template',
+            [\App\Http\Controllers\Admin\AdminController::class, 'createTemplate']
+        );
         Route::get(
             'fetch-user/{identifier}',
             [\App\Http\Controllers\Admin\AdminController::class, 'fetchUser']
@@ -291,6 +302,8 @@ Route::group(['prefix' => 'appsumo'], function () {
 Route::prefix('forms')->name('forms.')->group(function () {
     Route::middleware('protected-form')->group(function () {
         Route::post('{slug}/answer', [PublicFormController::class, 'answer'])->name('answer')->middleware(HandlePrecognitiveRequests::class);
+        Route::get('{slug}/stripe-connect/get-account', [FormPaymentController::class, 'getAccount'])->name('stripe-connect.get-account')->middleware(HandlePrecognitiveRequests::class);
+        Route::post('{slug}/stripe-connect/payment-intent', [FormPaymentController::class, 'createIntent'])->name('stripe-connect.create-intent')->middleware(HandlePrecognitiveRequests::class);
 
         // Form content endpoints (user lists, relation lists etc.)
         Route::get(

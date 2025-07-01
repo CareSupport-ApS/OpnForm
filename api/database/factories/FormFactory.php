@@ -57,7 +57,6 @@ class FormFactory extends Factory
             'width' => $this->faker->randomElement(Form::WIDTHS),
             'dark_mode' => $this->faker->randomElement(Form::DARK_MODE_VALUES),
             'color' => '#3B82F6',
-            'hide_title' => false,
             'no_branding' => false,
             'uppercase_labels' => true,
             'transparent_background' => false,
@@ -72,6 +71,7 @@ class FormFactory extends Factory
             'tags' => [],
             'editable_submissions_button_text' => 'Edit submission',
             'confetti_on_submission' => false,
+            'auto_save' => false,
             'seo_meta' => [],
         ];
     }

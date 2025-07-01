@@ -4,7 +4,7 @@
     orientation="horizontal"
   >
     <UButton
-      v-track.delete_record_click
+      v-track.edit_record_click
       size="sm"
       color="white"
       icon="heroicons:pencil-square"
@@ -70,9 +70,8 @@ export default {
       opnFetch(
         "/open/forms/" +
           this.form.id +
-          "/records/" +
-          this.submission.id +
-          "/delete",
+          "/submissions/" +
+          this.submission.id,
         { method: "DELETE" },
       )
         .then(async (data) => {
