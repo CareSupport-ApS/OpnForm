@@ -7,6 +7,7 @@ use App\Models\Forms\Form;
 use App\Rules\CustomSlugRule;
 use App\Rules\FormPropertyLogicRule;
 use App\Rules\PaymentBlockConfigurationRule;
+use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Contracts\Validation\Validator;
@@ -25,6 +26,11 @@ abstract class UserFormRequest extends \Illuminate\Foundation\Http\FormRequest
     public function __construct(Request $request)
     {
         $this->form = $request?->form ?? null;
+
+        // // For update requests, try to get the form from the route parameter
+        if (!$this->form && $request->route('id')) {
+            $this->form = Form::find($request->route('id'));
+        }
     }
 
     protected function prepareForValidation()
@@ -66,7 +72,7 @@ abstract class UserFormRequest extends \Illuminate\Foundation\Http\FormRequest
         ];
 
         // Log to both default channel and Slack
-        if (!in_array(\App::environment(), ['testing'])) {
+        if (!in_array(App::environment(), ['testing'])) {
             Log::channel('combined')->warning(
                 'Frontend validation bypass detected in form submission',
                 $logData
