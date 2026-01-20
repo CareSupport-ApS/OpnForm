@@ -36,7 +36,7 @@
       </template>
       <template #actions-cell="{ row }">
         <UButton
-          v-if="row.original.status == 'active' || row.original.status == 'trialing'"
+          v-if="['active', 'trialing'].includes(row.original.status) && !row.original.canceled_at"
           color="error"
           variant="outline"
           size="sm"
@@ -50,8 +50,8 @@
       class="flex justify-end px-3 py-3.5 border-t border-neutral-200 dark:border-neutral-700"
     >
       <UPagination
-        v-model="page"
-        :page-count="pageCount"
+        v-model:page="page"
+        :items-per-page="pageCount"
         :total="subscriptions.length"
       />
     </div>
@@ -148,6 +148,9 @@ const columns = [{
 }, {
     accessorKey: 'status',
     header: 'Status'
+},{
+    accessorKey: 'canceled_at',
+    header: 'Canceled at'
 }, {
     accessorKey: 'actions',
     header: '',

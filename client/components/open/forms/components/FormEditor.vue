@@ -175,7 +175,7 @@ const {
   startResize
 } = useResizable({
   storageKey: 'formEditorSidebarWidth',
-  defaultWidth: 320,
+  defaultWidth: 315,
   direction: 'left',
   maxWidth: () => Math.min(600, window.innerWidth * 0.6)
 })
@@ -205,6 +205,20 @@ const workingFormStore = useWorkingFormStore()
 const crisp = useCrisp()
 const amplitude = useAmplitude()
 
+// Keyboard shortcut to open add field sidebar
+defineShortcuts({
+  meta_b: {
+    handler: () => {
+      workingFormStore.openAddFieldSidebar()
+    }
+  },
+  ctrl_b: {
+    handler: () => {
+      workingFormStore.openAddFieldSidebar()
+    }
+  }
+})
+
 // Computed properties
 const activeTab = computed(() => workingFormStore.activeTab)
 
@@ -224,9 +238,9 @@ const displayFormModificationAlert = (responseData) => {
     responseData.form.cleanings &&
     Object.keys(responseData.form.cleanings).length > 0
   ) {
-    alert.warning(responseData.message)
+    alert.warning(responseData.message, 10000, { form: responseData.form })
   } else if (responseData.message) {
-    alert.success(responseData.message)
+    alert.success(responseData.message, 10000, { form: responseData.form })
   }
 }
 
@@ -297,10 +311,7 @@ const saveFormEdit = () => {
       form_id: updatedForm.id,
       form_slug: updatedForm.slug,
     })
-    displayFormModificationAlert({
-      form: updatedForm,
-      message: "Form successfully saved.",
-    })
+    displayFormModificationAlert(response)
     } catch (error) {
       console.error("Analytics error", error)
     }
@@ -352,10 +363,7 @@ const saveFormCreate = () => {
     } catch (error) {
       console.error("Analytics error", error)
     }
-    displayFormModificationAlert({
-      form: newForm,
-      message: "Form successfully created.",
-    })
+    displayFormModificationAlert(response)
 
     useRouter().push({
       name: "forms-slug-show-share",
@@ -391,10 +399,9 @@ const saveFormGuest = () => {
   emit("openRegister")
 }
 
-
-
 defineExpose({
-  saveFormCreate
+  saveFormCreate,
+  showValidationErrors
 })
 
 // Lifecycle hooks

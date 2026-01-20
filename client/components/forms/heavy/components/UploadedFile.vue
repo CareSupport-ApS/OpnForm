@@ -1,10 +1,7 @@
 <template>
   <div
     class="overflow-hidden"
-    :class="[
-      theme.fileInput.uploadedFile, 
-      { 'bg-white': !disabled, 'bg-gray-300': disabled }
-    ]"
+    :class="[variantSlots.root({ class: props.ui?.slots?.root }), { 'bg-white': !disabled, 'bg-gray-300': disabled }]"
     :title="file.file.name"
   >
     <div
@@ -68,7 +65,8 @@
 </template>
 
 <script>
-import CachedDefaultTheme from "~/lib/forms/themes/CachedDefaultTheme.js"
+import { tv } from 'tailwind-variants'
+import { uploadedFileTheme } from '~/lib/forms/themes/uploaded-file.theme.js'
 
 export default {
   name: "UploadedFile",
@@ -77,21 +75,18 @@ export default {
     file: { type: Object, default: null },
     disabled: { type: Boolean, default: false },
     showRemove: { type: Boolean, default: true },
-    theme: {
-      type: Object, default: () => {
-        const theme = inject("theme", null)
-        if (theme) {
-          return theme.value
-        }
-        return CachedDefaultTheme.getInstance()
-      }
-    },
+    ui: { type: Object, default: () => ({}) }
   },
   emits: ['remove'],
   data: () => ({
     isImageHide: false,
   }),
-
-  computed: {},
+  setup(props) {
+    const injectedTheme = inject('formTheme', null)
+    const resolvedTheme = computed(() => injectedTheme?.value || 'default')
+    const uploadedVariants = computed(() => tv(uploadedFileTheme, props.ui || {}))
+    const variantSlots = computed(() => uploadedVariants.value({ theme: resolvedTheme.value }))
+    return { variantSlots, props }
+  },
 }
 </script>

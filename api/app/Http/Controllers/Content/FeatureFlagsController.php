@@ -42,10 +42,27 @@ class FeatureFlagsController extends Controller
                     'google_sheets' => !empty(config('services.google.client_id')) && !empty(config('services.google.client_secret')),
                     'telegram' => !empty(config('services.telegram.bot_token')),
                 ],
+                'custom_code' => [
+                    'enable_self_hosted' => (bool) config('opnform.custom_code.enable_self_hosted', false),
+                ],
+                'oidc' => [
+                    'available' => $this->isOidcAvailable(),
+                    'forced' => config('oidc.force_login', false) && $this->isOidcAvailable(),
+                ],
             ];
         });
 
         return response()->json($featureFlags);
+    }
+
+    /**
+     * Check if OIDC is available (at least one enabled connection exists).
+     */
+    private function isOidcAvailable(): bool
+    {
+        return \App\Enterprise\Oidc\Models\IdentityConnection::enabled()
+            ->where('type', \App\Enterprise\Oidc\Models\IdentityConnection::TYPE_OIDC)
+            ->exists();
     }
 
     /**

@@ -27,7 +27,8 @@ class AnswerFormRequest extends FormRequest
 
     public function __construct(Request $request)
     {
-        $this->form = $request->form;
+        // Get form from route model binding instead of middleware
+        $this->form = $request->route('form') ?? $request->form;
         $this->maxFileSize = $this->form->workspace->max_file_size;
     }
 
@@ -37,15 +38,6 @@ class AnswerFormRequest extends FormRequest
             min($fieldProps['max_file_size'] * 1000000, $this->maxFileSize) : $this->maxFileSize;
     }
 
-    /**
-     * Validate form before use it
-     *
-     * @return bool
-     */
-    public function authorize()
-    {
-        return !$this->form->is_closed && !$this->form->max_number_of_submissions_reached && $this->form->visibility === 'public';
-    }
 
     /**
      * Get the validation rules that apply to the form.
@@ -72,7 +64,7 @@ class AnswerFormRequest extends FormRequest
 
             // User custom validation
             if (!(Str::of($property['type'])->startsWith('nf-')) && isset($property['validation'])) {
-                $rules[] = (new CustomFieldValidationRule($property['validation'], $data));
+                $rules[] = (new CustomFieldValidationRule($property['validation'], $data, $this->form));
             }
 
             // For get values instead of Id for select/multi select options
